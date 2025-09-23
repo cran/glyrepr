@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Glycan Graphs: The Network Behind Your Sugar Structures 🕸️</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+
+
+<style type="text/css">
+  code {
+    white-space: pre;
+  }
+  .sourceCode {
+    overflow: visible;
+  }
+</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Glycan Graphs: The Network Behind Your Sugar Structures 🕸️</h1>
+
+
+
+<p><strong>⚠️ Advanced Users Alert:</strong> This vignette is tailored for those already familiar with graph theory and the <code>igraph</code> package. If you’re new to these concepts, we recommend checking out the <a href="https://r.igraph.org">igraph documentation</a> first!</p>
+<div id="the-hidden-graph-universe-of-glycans" class="section level2">
+<h2>The Hidden Graph Universe of Glycans 🌌</h2>
+<p>Think of glycans as nature’s own social networks – they’re naturally represented as directed graphs, specifically as outwardly-directed trees where each sugar “talks” to its neighbors in a very structured way.</p>
+<p>Behind the scenes, every <code>glycan_structure()</code> object is actually powered by an <code>igraph</code> object. The beauty of <code>glycoverse</code> is that most users can work with the intuitive concept of “glycan structures” without getting lost in the graph theory weeds 🌾. But for you power users who want to peek under the hood – this guide is your treasure map! 🗺️</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(glyrepr)</span></code></pre></div>
+</div>
+<div id="whats-actually-stored-in-memory" class="section level2">
+<h2>What’s Actually Stored in Memory? 🧠</h2>
+<p>Representing a glycan in computer memory is like trying to pack for a month-long trip in a carry-on bag – you need to decide what’s absolutely essential!</p>
+<p>A glycan has tons of information: linear oriented C-atoms, basetype (the stereochemical skeleton), substituents, configuration, anomeric center, ring size, linkage positions… the list goes on! 📝</p>
+<p>Some packages (like Python’s <code>glypy</code>) take the “pack everything” approach 🎒, storing every tiny detail. This comprehensive strategy is fantastic for specialized tasks like MS/MS spectra simulation, but it can be overkill for everyday omics research.</p>
+<p><code>glyrepr</code> takes a more minimalist approach ✨. Our philosophy: <strong>if you can derive it from an IUPAC-condensed text representation, we’ll store it</strong>. Everything else? We let it go. This means we skip details like configuration and ring size – and that’s usually just fine, since common carbohydrates have predictable properties anyway.</p>
+<blockquote>
+<p>💡 <strong>Pro Tip:</strong> Want to master IUPAC-condensed notation? Check out <a href="https://glycoverse.github.io/glyrepr/articles/iupac.html">this comprehensive guide</a>.</p>
+</blockquote>
+</div>
+<div id="extracting-the-graph-show-me-the-network" class="section level2">
+<h2>Extracting the Graph: Show Me the Network! 🔍</h2>
+<p>You can’t just throw <code>igraph</code> functions at a <code>glycan_structure()</code> object – they speak different languages! Instead, let’s extract the underlying graph using <code>get_structure_graphs()</code>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glycan <span class="ot">&lt;-</span> <span class="fu">n_glycan_core</span>()</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>graph <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(glycan)</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>graph</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; IGRAPH 6a523cc DN-- 5 4 -- </span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; + attr: anomer (g/c), name (v/c), mono (v/c), sub (v/c), linkage (e/c)</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; + edges from 6a523cc (vertex names):</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 3-&gt;1 3-&gt;2 4-&gt;3 5-&gt;4</span></span></code></pre></div>
+<p>Let’s decode what we’re seeing here 🕵️:</p>
+<p><strong>First line:</strong> Directed Named (“DN”) graph with 5 vertices (sugar units) and 4 edges (bonds). Think of it as a family tree with 5 people and 4 relationships.</p>
+<p><strong>Graph-level attributes:</strong></p>
+<ul>
+<li><code>anomer</code> 🔄: The anomeric configuration of the reducing end (the “root” of our tree)</li>
+</ul>
+<p><strong>Vertex attributes (the sugar units themselves):</strong></p>
+<ul>
+<li><code>name</code> 🏷️: Unique ID for each sugar (like social security numbers)</li>
+<li><code>mono</code> 🍬: The actual sugar type (“Hex”, “HexNAc”, etc.)</li>
+<li><code>sub</code> ⚗️: Any chemical decorations attached to the sugar</li>
+</ul>
+<p><strong>Edge attributes (the connections):</strong></p>
+<ul>
+<li><code>linkage</code> 🔗: How the sugars are connected (including bond positions and configurations)</li>
+</ul>
+<p><strong>Connection pattern:</strong> “1-&gt;2” means vertex 1 connects to vertex 2. We treat bonds as arrows pointing from the core toward the branches (even though real glycosidic bonds aren’t actually directional – it just makes coding easier! 😅)</p>
+<p>Want to see it visually? <code>igraph</code> has got you covered:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(graph)</span></code></pre></div>
+<p><img src="data:image/png;base64,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" /><!-- --></p>
+</div>
+<div id="deep-dive-dissecting-the-components" class="section level2">
+<h2>Deep Dive: Dissecting the Components 🔬</h2>
+<div id="vertices-meet-your-sugar-cast" class="section level3">
+<h3>Vertices: Meet Your Sugar Cast 🎭</h3>
+<p>Each vertex represents a monosaccharide with three key properties:</p>
+<p><strong>🏷️ Names (Unique IDs):</strong> These are auto-generated identifiers – usually simple integers, but they could be anything as long as they’re unique:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>igraph<span class="sc">::</span><span class="fu">V</span>(graph)<span class="sc">$</span>name</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot;1&quot; &quot;2&quot; &quot;3&quot; &quot;4&quot; &quot;5&quot;</span></span></code></pre></div>
+<p><strong>🍬 Monosaccharides (The Star Players):</strong> These are IUPAC-condensed names like “Hex”, “HexNAc”, “Glc”, “GlcNAc”. Think of them as the “job titles” of your sugars:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>igraph<span class="sc">::</span><span class="fu">V</span>(graph)<span class="sc">$</span>mono</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot;Man&quot;    &quot;Man&quot;    &quot;Man&quot;    &quot;GlcNAc&quot; &quot;GlcNAc&quot;</span></span></code></pre></div>
+<blockquote>
+<p>📚 <strong>Reference:</strong> For the complete cast of available monosaccharides, check <a href="https://www.ncbi.nlm.nih.gov/glycans/snfg.html">SNFG notation</a> or run <code>available_monosaccharides()</code>.</p>
+</blockquote>
+<p><strong>⚗️ Substituents (The Accessories):</strong> Chemical decorations like “Me” (methyl), “Ac” (acetyl), “S” (sulfate), etc. Position matters! “3Me” = methyl at position 3, “?S” = sulfate at unknown position:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>igraph<span class="sc">::</span><span class="fu">V</span>(graph)<span class="sc">$</span>sub</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot;&quot; &quot;&quot; &quot;&quot; &quot;&quot; &quot;&quot;</span></span></code></pre></div>
+<p>Got multiple decorations? No problem! They’re comma-separated and sorted by position:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>glycan2 <span class="ot">&lt;-</span> <span class="fu">as_glycan_structure</span>(<span class="st">&quot;Glc3Me6S(a1-&quot;</span>)</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>graph2 <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(glycan2)</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>igraph<span class="sc">::</span><span class="fu">V</span>(graph2)<span class="sc">$</span>sub</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot;3Me,6S&quot;</span></span></code></pre></div>
+</div>
+<div id="edges-the-relationship-status" class="section level3">
+<h3>Edges: The Relationship Status 💕</h3>
+<p>Edges represent glycosidic bonds with a simple but powerful format:</p>
+<pre><code>&lt;target anomeric config&gt;&lt;target position&gt; - &lt;source position&gt;</code></pre>
+<p>Here’s a real example where “Gal” has an “a” anomeric configuration, linking from position 3 of “GalNAc” to position 1 of “Gal”:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>glycan3 <span class="ot">&lt;-</span> <span class="fu">as_glycan_structure</span>(<span class="st">&quot;Gal(a1-3)GalNAc(b1-&quot;</span>)</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>graph3 <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(glycan3)</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>igraph<span class="sc">::</span><span class="fu">E</span>(graph3)<span class="sc">$</span>linkage</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot;a1-3&quot;</span></span></code></pre></div>
+<blockquote>
+<p>🤔 <strong>Why encode anomer info in edges?</strong> We debated this! It might seem more natural to store it with vertices, but thinking “Neu5Ac with a2-3 linkage” flows better mentally and matches IUPAC notation perfectly.</p>
+</blockquote>
+</div>
+<div id="graph-level-attributes-the-global-settings" class="section level3">
+<h3>Graph-Level Attributes: The Global Settings ⚙️</h3>
+<p><strong>🔄 Anomer:</strong> The anomeric configuration of the reducing end (the “root” sugar that doesn’t link to anything else)</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>graph<span class="sc">$</span>anomer</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot;b1&quot;</span></span></code></pre></div>
+</div>
+</div>
+<div id="now-for-the-fun-part-what-can-you-do" class="section level2">
+<h2>Now for the Fun Part: What Can You Do? 🎉</h2>
+<div id="unleash-the-power-of-igraph" class="section level3">
+<h3>Unleash the Power of <code>igraph</code> 💪</h3>
+<p>Once you understand the graph structure, the entire <code>igraph</code> universe opens up!</p>
+<p><strong>Example 1:</strong> Count branched structures (sugars with multiple children):</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sum</span>(igraph<span class="sc">::</span><span class="fu">degree</span>(graph, <span class="at">mode =</span> <span class="st">&quot;out&quot;</span>) <span class="sc">&gt;</span> <span class="dv">1</span>)</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 1</span></span></code></pre></div>
+<p><strong>Example 2:</strong> Explore the structure with breadth-first search:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>bfs_result <span class="ot">&lt;-</span> igraph<span class="sc">::</span><span class="fu">bfs</span>(graph, <span class="at">root =</span> <span class="dv">1</span>, <span class="at">mode =</span> <span class="st">&quot;out&quot;</span>)</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>bfs_result<span class="sc">$</span>order</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; + 5/5 vertices, named, from 6a523cc:</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 1 2 3 4 5</span></span></code></pre></div>
+</div>
+<div id="level-up-with-smap-functions" class="section level3">
+<h3>Level Up with <code>smap</code> Functions 🚀</h3>
+<p>Working with multiple glycans? You could use <code>purrr</code>:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(purrr)</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>glycans <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">n_glycan_core</span>(), <span class="fu">o_glycan_core_1</span>(), <span class="fu">o_glycan_core_2</span>())</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>graphs <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(glycans)  <span class="co"># Extract graphs first</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="fu">map_int</span>(graphs, <span class="sc">~</span> igraph<span class="sc">::</span><span class="fu">vcount</span>(.x))    <span class="co"># Then analyze</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 5 2 3</span></span></code></pre></div>
+<p>But <code>glyrepr</code>’s <code>smap</code> functions are way more elegant:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">smap_int</span>(glycans, <span class="sc">~</span> igraph<span class="sc">::</span><span class="fu">vcount</span>(.x))  <span class="co"># Direct analysis - no intermediate step!</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 5 2 3</span></span></code></pre></div>
+<p>The real magic ✨ of <code>smap</code> functions is their intelligence with duplicates. Real datasets often have many identical structures, and <code>smap</code> optimizes by processing unique structures once, then efficiently expanding results back to the original dimensions.</p>
+<blockquote>
+<p>📖 <strong>Learn More:</strong> Dive deeper into <code>smap</code> wizardry in the <a href="https://glycoverse.github.io/glyrepr/articles/smap.html">dedicated vignette</a>.</p>
+</blockquote>
+</div>
+<div id="motif-hunting-with-glymotif" class="section level3">
+<h3>Motif Hunting with <code>glymotif</code> 🔍</h3>
+<p>One of the most exciting applications is identifying biologically meaningful motifs (functional substructures). The <code>glymotif</code> package, built on this graph foundation, specializes in exactly this task.</p>
+<blockquote>
+<p>🎯 <strong>Get Started:</strong> Check out the <a href="https://glycoverse.github.io/glymotif/articles/glymotif.html"><code>glymotif</code> introduction</a> to start your motif hunting adventure!</p>
+</blockquote>
+</div>
+</div>
+<div id="wrapping-up-your-graph-journey-continues" class="section level2">
+<h2>Wrapping Up: Your Graph Journey Continues 🎯</h2>
+<p>You’ve just unlocked the graph-powered engine behind <code>glyrepr</code>! You now understand:</p>
+<ul>
+<li>🏗️ How glycan structures map to directed graphs</li>
+<li>📊 What information is stored (and what’s deliberately omitted)</li>
+<li>🔧 How to extract and manipulate the underlying graphs</li>
+<li>🚀 How to leverage <code>igraph</code>, <code>smap</code>, and <code>glymotif</code> for powerful analyses</li>
+</ul>
+<p>The graph representation might seem complex at first, but it’s this solid foundation that enables all the sophisticated glycan analysis capabilities in the <code>glycoverse</code>. Now go forth and explore your glycan networks! 🌟</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

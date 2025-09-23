@@ -1,0 +1,248 @@
+---
+title: "Getting Started with glyrepr"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with glyrepr}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+Welcome to the world of glycan analysis! 
+If you've ever tried to work with glycans computationally, 
+you know the struggle: 
+these tree-like molecules are notoriously difficult to represent and analyze compared to their linear cousins like proteins or DNA. 
+That's where `glyrepr` comes to the rescue.
+
+Think of `glyrepr` as your **glycan translator** — it teaches your computer how to "speak glycan" fluently. 
+Whether you're dealing with compositions (what's in the glycan) or structures (how it's connected), 
+this package has got you covered.
+
+```{r setup}
+library(glyrepr)
+```
+
+## Quick Start: What Are We Talking About?
+
+Before we dive in, 
+let's establish our vocabulary. 
+Don't worry — it's simpler than it sounds!
+
+| Term | What It Means | Example |
+|------|---------------|---------|
+| **Composition** | The "ingredients list" — how many of each sugar | `Hex(5)HexNAc(2)` |
+| **Structure** | The "blueprint" — how sugars are connected | `Man(a1-3)Man(b1-4)GlcNAc` |
+| **Monosaccharide** | A single sugar unit (the building blocks) | `Gal`, `Man`, `Hex` |
+| **Linkage** | The "glue" between sugars | `a1-3`, `b1-4` |
+| **Substitution** | Chemical decorations on sugars | `6Ac`, `3Me` |
+
+🔍 **Pro tip**: 
+We distinguish between **generic** sugars (like mystery boxes labeled "Hex") and **concrete** sugars (like specific boxes labeled "Galactose").
+
+## Part 1: Compositions — The Easy Start
+
+Let's start with something straightforward: 
+glycan compositions. 
+Think of these as ingredient lists for your favorite recipes.
+
+### Creating Your First Compositions
+
+There are three ways to create compositions, 
+each with its own superpower:
+
+**Method 1: The Direct Approach**
+```{r}
+# Just tell R what you have
+glycan_composition(c(Hex = 5, HexNAc = 2), c(Gal = 1, GalNAc = 1))
+```
+
+**Method 2: The Programmatic Way**
+```{r}
+# Perfect when you're processing data from files or databases
+comp_list <- list(c(Hex = 5, HexNAc = 2), c(Gal = 1, GalNAc = 1))
+as_glycan_composition(comp_list)
+```
+
+**Method 3: The Parser**
+```{r}
+# Copy-paste from your mass spec software? No problem!
+as_glycan_composition(c("Hex(5)HexNAc(2)", "Gal(1)GalNAc(1)"))
+```
+
+### The Magic of Colors 🌈
+
+Here's something cool: 
+when you run these examples in your R console, 
+you'll see the concrete monosaccharides (like Gal and GalNAc) displayed in beautiful colors! 
+These follow the [SNFG standard](https://www.ncbi.nlm.nih.gov/glycans/snfg.html) — the universal "color code" for glycans. 
+Think of it as the glycan rainbow 🌈.
+
+### Smart Counting with `count_mono()`
+
+Now here's where `glyrepr` shows its intelligence:
+
+```{r}
+comp <- glycan_composition(
+  c(Hex = 5, HexNAc = 2),          # generic sugars
+  c(Gal = 1, Man = 1, GalNAc = 1)  # concrete sugars
+)
+
+# How many galactose residues?
+count_mono(comp, "Gal")
+
+# How many hexose residues? (This includes Gal and Man!)
+count_mono(comp, "Hex")
+```
+
+Notice how `count_mono()` is smart enough to know that galactose and mannose are both hexoses? 
+That's the power of understanding glycan hierarchies!
+
+## Part 2: Structures — Where the Magic Happens
+
+Compositions are nice, 
+but structures are where `glyrepr` truly shines. 
+This is like going from knowing the ingredients to understanding the actual recipe and cooking method.
+
+### Your First Glycan Structures
+
+Let's work with some real glycan structures. 
+These strings below are called the "IUPAC-condensed" glycan text representations.
+They might look cryptic, 
+but they're actually quite readable once you get the hang of it.
+To learn about them, check out [this article](https://glycoverse.github.io/glyrepr/articles/iupac.html).
+
+```{r}
+iupacs <- c(
+  "Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-",  # The famous N-glycan core
+  "Gal(b1-3)GalNAc(a1-",                                  # O-glycan core 1
+  "Gal(b1-3)[GlcNAc(b1-6)]GalNAc(a1-",                    # O-glycan core 2
+  "Man(a1-3)[Man(a1-6)]Man(a1-3)[Man(a1-6)]Man(a1-",      # A branched mannose tree
+  "GlcNAc6Ac(b1-4)Glc3Me(a1-"                             # With some decorations
+)
+
+struc <- as_glycan_structure(iupacs)
+struc
+```
+
+### The Secret Sauce: Unique Structure Optimization
+
+Here's where `glyrepr` gets really clever. 
+Notice that "# Unique structures: 5" message? 
+This isn't just informational — it's the key to lightning-fast performance.
+
+Let's see this optimization in action:
+
+```{r}
+# Create a big dataset with lots of repetition
+large_struc <- rep(struc, 1000)  # 5,000 structures total
+large_struc
+```
+
+Still showing "# Unique structures: 5"! 
+This means `glyrepr` is storing only 5 unique graphs internally, 
+not 5,000. 
+This is like having a smart library system that stores only one copy of each book, 
+no matter how many people want to read it.
+
+### Performance That Will Blow Your Mind 🚀
+
+Let's put this to the test:
+
+```{r}
+library(tictoc)
+
+tic("Converting 5 structures")
+result_small <- convert_to_generic(struc)
+toc()
+
+tic("Converting 5,000 structures")
+result_large <- convert_to_generic(large_struc)
+toc()
+```
+
+**Mind = blown!** 🤯 
+The performance is nearly identical because `glyrepr` only processes each unique structure once, 
+then cleverly expands the results.
+
+### Structure Manipulation Tools
+
+`glyrepr` comes with several handy tools for structure manipulation:
+
+**Strip away the connections:**
+```{r}
+remove_linkages(struc)
+```
+
+**Remove the decorations:**
+```{r}
+# Let's look at our decorated structure first
+struc[5]
+
+# Now remove the decorations (6Ac and 3Me)
+remove_substituents(struc[5])
+```
+
+## Part 3: Conversions and Integrations
+
+### From Structure to Composition
+
+Ever wondered what's actually in those complex structures? 
+Easy:
+
+```{r}
+comp <- as_glycan_composition(struc)
+comp
+```
+
+### Back to Strings
+
+Need to export your data or use it elsewhere?
+
+```{r}
+# Get the original string representations
+as.character(struc)
+as.character(comp)
+```
+
+### Playing Nice with the Tidyverse
+
+`glyrepr` objects are first-class citizens in the tidyverse:
+
+```{r}
+suppressPackageStartupMessages(library(tibble))
+suppressPackageStartupMessages(library(dplyr))
+
+df <- tibble(
+  id = seq_along(struc),
+  structures = struc,
+  names = c("N-glycan core", "Core 1", "Core 2", "Branched Man", "Decorated")
+)
+
+df %>% 
+  mutate(n_man = count_mono(structures, "Man")) %>%
+  filter(n_man > 1)
+```
+
+## What's Next?
+
+Congratulations! 
+You've just learned the fundamentals of glycan representation in R. 
+Here's what you can explore next:
+
+- 🔬 **Advanced analysis**: Check out the "Power User Guide: Efficient Glycan Manipulation" vignette for power-user features
+- 🧬 **Motif searching**: Try the `glymotif` package for finding patterns in glycan structures  
+- 📊 **Visualization**: Explore glycan visualization packages in the glycoverse
+
+The glycoverse is your oyster! 🦪
+
+## Session Information
+
+```{r}
+sessionInfo()
+```
