@@ -55,26 +55,6 @@ test_that("structure_to_iupac handles two-node structures", {
   expect_equal(result, "Glc(a1-3)Man(b1-")
 })
 
-test_that("parse_linkage works correctly", {
-  # Test valid linkages
-  result1 <- parse_linkage("a1-3")
-  expect_equal(result1$x, "a")
-  expect_equal(result1$y, "1")
-  expect_equal(result1$z, "3")
-  expect_equal(result1$x_rank, 1)
-  expect_equal(result1$y_rank, 1)
-  expect_equal(result1$z_rank, 3)
-  
-  # Test with ?
-  result2 <- parse_linkage("?2-?")
-  expect_equal(result2$x, "?")
-  expect_equal(result2$y, "2")
-  expect_equal(result2$z, "?")
-  expect_equal(result2$x_rank, 3)
-  expect_equal(result2$y_rank, 2)
-  expect_equal(result2$z_rank, 0)
-})
-
 test_that("structure_to_iupac ensures isomorphic graphs produce same sequence", {
   # Create first graph: Man with a1-3 and a1-6 branches (in that order)
   graph1 <- igraph::make_graph(~ 1-+2, 2-+3, 3-+4, 3-+5)
@@ -168,6 +148,32 @@ test_that("structure_to_iupac selects backbone by linkage when depths are equal 
   result <- structure_to_iupac(glycan)
   # Gal should be backbone (a1-?), Fuc should be branch (a1-6)
   expect_equal(result, "Gal(a1-?)[Fuc(a1-6)]Man(b1-4)Glc(b2-")
+})
+
+test_that("structure_to_iupac returns deterministic sequence for ties", {
+  # Create two structures with the same topology but different node ordering
+  # Man ├─ Gal (linkage a1-?)
+  #     └─ Fuc (linkage a1-?)
+
+  # glycan 1
+  graph1 <- igraph::make_graph(~ 1-+2, 1-+3)
+  igraph::V(graph1)$mono <- c("Man", "Gal", "Fuc")
+  igraph::V(graph1)$sub <- ""
+  igraph::E(graph1)$linkage <- c("a1-?", "a1-?")
+  graph1$anomer <- "a1"
+  glycan1 <- glycan_structure(graph1)
+
+  # glycan 2
+  graph2 <- igraph::make_graph(~ 1-+2, 1-+3)
+  igraph::V(graph2)$mono <- c("Man", "Fuc", "Gal")
+  igraph::V(graph2)$sub <- ""
+  igraph::E(graph2)$linkage <- c("a1-?", "a1-?")
+  graph2$anomer <- "a1"
+  glycan2 <- glycan_structure(graph2)
+
+  result1 <- structure_to_iupac(glycan1)
+  result2 <- structure_to_iupac(glycan2)
+  expect_equal(result1, result2)
 })
 
 test_that("structure_to_iupac handles different anomer values", {

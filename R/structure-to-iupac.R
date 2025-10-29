@@ -69,12 +69,12 @@ structure_to_iupac <- function(glycan) {
 # Internal function to convert a single igraph to IUPAC
 .structure_to_iupac_single <- function(glycan) {
   root <- which(igraph::degree(glycan, mode = "in") == 0)
-  depths <- calculate_depths(glycan, root)
+  seq_cache <- build_seq_cache(glycan, root)
 
   # Step 1: Generate pseudo-IUPAC sequence starting from root
   # `pseudo_seq` is a string like "V1E1[V2E2]V3E3".
   # V1, V2, V3 are the vertex indices, E1, E2, E3 are the edge indices.
-  pseudo_seq <- seq_glycan(glycan, root, depths)
+  pseudo_seq <- seq_glycan(root, seq_cache)
 
   # Step 2: Replace vertex and edge indices with actual monosaccharides and linkages
   real_seq <- replace_mono_and_link(pseudo_seq, glycan)
@@ -83,84 +83,67 @@ structure_to_iupac <- function(glycan) {
   paste0(real_seq, "(", anomer, "-")
 }
 
-#' Parse linkage string into comparable components
+#' Calculate linkage rank used for ordering linkages
 #'
-#' @param linkage Character string in format "xy-z" (e.g., "b1-4", "a2-3")
-#' @returns Named list with x, y, z components and their numeric ranks
-#' @noRd
-parse_linkage <- function(linkage) {
-  # Parse linkage format: xy-z where x is a/b/?, y is digit/?, z is digit/?
-
-  x <- stringr::str_sub(linkage, 1, 1)  # anomeric configuration
-  link_part <- stringr::str_sub(linkage, 2, -1)  # first position  
-  y <- stringr::str_split_i(link_part, "-", 1)  # first position  
-  z <- stringr::str_split_i(link_part, "-", 2)  # second position
-
-  # Convert to numeric ranks for comparison
-  # For x: ? > b > a, so assign ? = 3, b = 2, a = 1
-  x_rank <- switch(x, "a" = 1, "b" = 2, "?" = 3)
-
-  # For y and z: ? is greater than any number
-  y_rank <- if (y == "?" || stringr::str_detect(y, "/")) 0 else as.numeric(y)
-  z_rank <- if (z == "?" || stringr::str_detect(z, "/")) 0 else as.numeric(z)
-
-  list(x = x, y = y, z = z, x_rank = x_rank, y_rank = y_rank, z_rank = z_rank)
-}
-
-#' Order linkages
+#' This is the reciprocal of the second position of the linkage.
+#' "?" always rank the highest, so assigned 1.
+#' For example, "b1-4" has rank 1/4, "a2-3" has rank 1/3, "a?-?" has rank 1.
 #'
-#' @param linkages A character vector of linkages.
-#' @param decreasing Logical. If TRUE, the linkages are ordered in decreasing order.
-#' @returns A character vector of ordered linkages.
+#' @param linkages Character vector in format "xy-z" (e.g., "b1-4", "a2-3")
+#' @returns Numeric rank of the linkage.
 #' @noRd
-order_linkages <- function(linkages, decreasing = FALSE) {
-  parsed <- purrr::map(linkages, parse_linkage)
-  rank <- purrr::map_dbl(parsed, ~ .x$z_rank)
-  order(rank, decreasing = decreasing)
+calculate_linkage_rank <- function(linkages) {
+  pos2 <- stringr::str_split_i(linkages, "-", 2)  # second position
+  suppressWarnings(
+    dplyr::if_else(
+      pos2 == "?" | stringr::str_detect(pos2, "/"),
+      1,
+      1 / as.numeric(pos2)
+    )
+  )
 }
 
 #' Calculate depth (longest path to leaf) for each node
-#' 
+#'
 #' @param glycan An igraph object representing a glycan structure
 #' @param root Root vertex
-#' @returns Named vector of depths for each node
+#' @returns Numeric vector of depths for each node (indexed by vertex id)
 #' @noRd
 calculate_depths <- function(glycan, root) {
-  all_vertices <- igraph::V(glycan)
-  depths <- rep(NA_real_, length(all_vertices))
-  names(depths) <- names(all_vertices)
+  vcount <- igraph::vcount(glycan)
+  depths <- rep(NA_real_, vcount)
 
   # Use a local function to calculate depths with memoization
   calculate_single_depth <- function(node) {
-    node_name <- as.character(node)
+    node_index <- as.integer(node)
 
-    if (!is.na(depths[node_name])) {
-      return(depths[node_name])
+    if (!is.na(depths[node_index])) {
+      return(depths[node_index])
     }
 
     # Get child nodes
-    children <- igraph::neighbors(glycan, node, mode = "out")
+    children <- as.integer(igraph::neighbors(glycan, node_index, mode = "out"))
 
     if (length(children) == 0) {
       # Leaf node
-      depths[node_name] <<- 0
+      depths[node_index] <<- 0
     } else {
       # Calculate depth for all children first
-      child_depths <- sapply(children, calculate_single_depth)
+      child_depths <- vapply(children, calculate_single_depth, numeric(1))
 
       # This node's depth is 1 + max child depth
-      depths[node_name] <<- 1 + max(child_depths)
+      depths[node_index] <<- 1 + max(child_depths)
     }
 
-    depths[node_name]
+    depths[node_index]
   }
 
   # Calculate depths for all nodes starting from root
   calculate_single_depth(root)
 
   # Fill in any remaining nodes (shouldn't be needed for connected graph)
-  for (v in all_vertices) {
-    if (is.na(depths[as.character(v)])) {
+  for (v in seq_len(vcount)) {
+    if (is.na(depths[v])) {
       calculate_single_depth(v)
     }
   }
@@ -168,78 +151,161 @@ calculate_depths <- function(glycan, root) {
   depths
 }
 
-#' Generate glycan sequence recursively using pseudo-IUPAC format
+#' Build adjacency cache for sequence generation
+#'
+#' It caches the following information:
+#' - children: `children[[i]]` is all the children ids of vertex i.
+#' - edge_ids: `edge_ids[[i]]` is all the edge ids directed from vertex i.
+#' - linkages: `linkages[[i]]` is all the linkage attributes (e.g. "b1-4") of the edges directed from vertex i.
+#' - depths: `depths[i]` is the maximum depth of the subtree rooted at vertex i.
+#' - signatures: `signatures[i]` is the signature of the subtree rooted at vertex i.
+#'   The signature of a node is a string used for branch ordering in ties breaking.
 #'
 #' @param glycan An igraph object representing a glycan structure
+#' @param root Root vertex index used for depth calculation
+#' @returns List containing child vertices, edge ids, linkages per parent, and node depths
+#' @noRd
+build_seq_cache <- function(glycan, root) {
+  vcount <- igraph::vcount(glycan)
+  edge_ids <- seq_len(igraph::ecount(glycan))
+  edge_vertices <- igraph::ends(glycan, igraph::E(glycan), names = FALSE)
+  edge_linkages <- igraph::edge_attr(glycan, "linkage")
+
+  children <- vector("list", vcount)
+  parent_edge_ids <- vector("list", vcount)
+  parent_linkages <- vector("list", vcount)
+
+  for (edge_id in edge_ids) {
+    parent <- edge_vertices[edge_id, 1]
+    child <- edge_vertices[edge_id, 2]
+
+    children[[parent]] <- c(children[[parent]], child)
+    parent_edge_ids[[parent]] <- c(parent_edge_ids[[parent]], edge_id)
+    parent_linkages[[parent]] <- c(parent_linkages[[parent]], edge_linkages[edge_id])
+  }
+
+  # ===== Calculate node signatures =====
+  mono_vec <- igraph::vertex_attr(glycan, "mono")
+  sub_vec  <- igraph::vertex_attr(glycan, "sub")
+  mono_sub <- ifelse(
+    is.na(sub_vec) | sub_vec == "",
+    mono_vec,
+    paste0(mono_vec, stringr::str_remove_all(sub_vec, ","))
+  )
+
+  signature <- rep(NA_character_, vcount)
+
+  compute_sig <- function(node) {
+    if (!is.na(signature[node])) {
+      return(signature[node])
+    }
+
+    kids <- children[[node]]
+
+    if (is.null(kids) || length(kids) == 0) {
+      signature[node] <<- mono_sub[node]
+    } else {
+      toks <- character(length(kids))
+      for (i in seq_along(kids)) {
+        kid <- kids[i]
+        link_i <- parent_linkages[[node]][i]
+        toks[i] <- paste0(link_i, "->", compute_sig(kid))
+      }
+
+      toks <- sort(toks)
+
+      signature[node] <<- paste0(
+        mono_sub[node],
+        "{",
+        paste0(toks, collapse = ","),
+        "}"
+      )
+    }
+
+    signature[node]
+  }
+
+  # trigger calculation of all node signatures
+  for (n in seq_len(vcount)) {
+    compute_sig(n)
+  }
+  # ===== End of calculating node signatures =====
+
+  list(
+    children = children,
+    edge_ids = parent_edge_ids,
+    linkages = parent_linkages,
+    depths = calculate_depths(glycan, root),
+    signatures = signature
+  )
+}
+
+#' Generate glycan sequence recursively using pseudo-IUPAC format
+#'
 #' @param node Current node
-#' @param depths Vector of depths for all nodes
+#' @param cache Precomputed adjacency and edge metadata
 #' @returns Character string representing the pseudo-IUPAC sequence
 #' @noRd
-seq_glycan <- function(glycan, node, depths) {
-  children <- igraph::neighbors(glycan, node, mode = "out")
+seq_glycan <- function(node, cache) {
+  children <- cache$children[[node]]
+  edge_ids <- cache$edge_ids[[node]]
 
   # Base case: leaf node
-  if (length(children) == 0) {
+  if (is.null(children) || length(children) == 0) {
     # Return vertex index with V prefix
     return(paste0("V", as.character(node)))
   }
 
-  # Find backbone child (deepest, break ties by linkage)
-  child_names <- as.character(children)
-  child_depths <- depths[child_names]
-  max_depth <- max(child_depths)
-  backbone_candidates <- children[child_depths == max_depth]
-
-  # Choose backbone child by linkage if multiple candidates
-  if (length(backbone_candidates) > 1) {
-    candidate_linkages <- character(length(backbone_candidates))
-    for (i in seq_along(backbone_candidates)) {
-      edge_id <- igraph::get_edge_ids(glycan, vp = c(as.character(node), as.character(backbone_candidates[i])))
-      candidate_linkages[i] <- igraph::edge_attr(glycan, "linkage", edge_id)
-    }
-
-    # Sort by linkage (ascending order) - smaller linkage wins
-    linkage_order <- order_linkages(candidate_linkages, decreasing = FALSE)
-    backbone_child <- backbone_candidates[linkage_order[1]]
+  if (length(children) > 1) {
+    children_order <- order_branches(node, cache)
+    backbone_child <- children[[children_order$backbone]]
+    backbone_edge_id <- edge_ids[[children_order$backbone]]
+    backbone_seq <- seq_glycan(backbone_child, cache)
+    branch_children <- children[children_order$branches]
+    branch_edge_ids <- edge_ids[children_order$branches]
+    branch_seqs <- purrr::map_chr(branch_children, ~ seq_glycan(.x, cache))
+    branch_seqs <- paste0("[", branch_seqs, "E", branch_edge_ids, "]")
   } else {
-    backbone_child <- backbone_candidates[1]
-  }
-
-  # Other children are branches
-  branch_children <- children[!children %in% backbone_child]
-
-  # Generate backbone sequence
-  backbone_seq <- seq_glycan(glycan, backbone_child, depths)
-
-  # Get backbone edge index
-  backbone_edge_id <- igraph::get_edge_ids(glycan, vp = c(as.character(node), as.character(backbone_child)))
-
-  # Generate branch sequences
-  branch_parts <- character()
-  if (length(branch_children) > 0) {
-    # Sort branches by linkage
-    branch_linkages <- character(length(branch_children))
-    for (i in seq_along(branch_children)) {
-      edge_id <- igraph::get_edge_ids(glycan, vp = c(as.character(node), as.character(branch_children[i])))
-      branch_linkages[i] <- igraph::edge_attr(glycan, "linkage", edge_id)
-    }
-
-    branch_order <- order_linkages(branch_linkages, decreasing = FALSE)
-    branch_children <- branch_children[branch_order]
-
-    for (i in seq_along(branch_children)) {
-      branch_child <- branch_children[i]
-      edge_id <- igraph::get_edge_ids(glycan, vp = c(as.character(node), as.character(branch_child)))
-
-      # Generate branch sequence with edge index
-      branch_seq <- seq_glycan(glycan, branch_child, depths)
-      branch_parts[i] <- paste0("[", branch_seq, "E", edge_id, "]")
-    }
+    backbone_child <- children[[1]]
+    backbone_edge_id <- edge_ids[[1]]
+    backbone_seq <- seq_glycan(backbone_child, cache)
+    branch_seqs <- ""
   }
 
   # Combine: backbone + E<edge_index> + branches + V<node_index>
-  branches_str <- paste0(branch_parts, collapse = "")
+  branches_str <- paste0(branch_seqs, collapse = "")
   paste0(backbone_seq, "E", backbone_edge_id, branches_str, "V", as.character(node))
+}
+
+#' Order branches
+#'
+#' This function orders all branches of a node by depth, then by linkages.
+#'
+#' @param node A node index.
+#' @param cache Precomputed adjacency and edge metadata
+#' @returns A list of two elements:
+#'   - "backbone": the index of the backbone child.
+#'   - "branches": the indices of the branches in order.
+#'   All indices can only be used on `cache$children[[node]]`.
+#'   For example, when `backbone` is 2, it means `cache$children[[node]][[2]]` is the backbone child.
+#' @noRd
+order_branches <- function(node, cache) {
+  # Find the backbone child
+  children <- cache$children[[node]]
+  child_depths <- cache$depths[children]
+  child_linkages <- cache$linkages[[node]]
+  linkage_ranks <- calculate_linkage_rank(child_linkages)
+  child_sigs <- cache$signatures[children]
+  backbone_child_index <- order(child_depths, linkage_ranks, child_sigs, decreasing = TRUE)[[1]]
+
+  # Order the rest of the children
+  if (length(children) > 1) {
+    branch_order <- order(linkage_ranks, child_sigs, decreasing = TRUE)
+    branch_order <- branch_order[branch_order != backbone_child_index]
+    list(backbone = backbone_child_index, branches = branch_order)
+  } else {
+    list(backbone = backbone_child_index, branches = integer(0))
+  }
 }
 
 #' Replace vertex and edge indices with actual monosaccharides and linkages
