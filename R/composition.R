@@ -43,7 +43,13 @@
 #' @seealso `available_monosaccharides()`, `available_substituents()`
 #' @export
 glycan_composition <- function(...) {
-  args <- list(...)
+  args <- rlang::list2(...)
+  if (!purrr::every(args, checkmate::test_integerish)) {
+    cli::cli_abort(c(
+      "Must be one or more named integer vectors.",
+      "i" = "You might want to use {.fn as_glycan_composition} for more flexible input."
+    ))
+  }
   x <- purrr::map(args, ~ {
     result <- as.integer(.x)
     names(result) <- names(.x)
@@ -87,9 +93,9 @@ is_known_composition_component <- function(names) {
 
 valid_glycan_composition <- function(x) {
   valid_one <- function(x) {
-    # Allow empty compositions (for conversion results)
+    # Reject empty compositions
     if (length(x) == 0) {
-      return(TRUE)
+      cli::cli_abort("Each composition in {.arg ...} must have at least one residue.")
     }
     
     # Check if the composition is named
@@ -150,24 +156,30 @@ valid_glycan_composition <- function(x) {
 #' contributes one "Me" substituent to the composition.
 #'
 #' @examples
-#' # Convert a named vector
+#' # From a named vector
 #' as_glycan_composition(c(Hex = 5, HexNAc = 2))
-#' 
-#' # Convert a named vector with substituents
+#'
+#' # From a named vector with substituents
 #' as_glycan_composition(c(Glc = 2, Gal = 1, Me = 1, S = 1))
-#' 
-#' # Convert a list of named vectors
+#'
+#' # From a list of named vectors
 #' as_glycan_composition(list(c(Hex = 5, HexNAc = 2), c(Hex = 3, HexNAc = 1)))
-#' 
-#' # Convert an existing composition (returns as-is)
+#'
+#' # From a character vector of Byonic composition strings
+#' as_glycan_composition(c("Hex(5)HexNAc(2)", "Hex(3)HexNAc(1)"))
+#'
+#' # From a character vector of simple composition strings
+#' as_glycan_composition(c("H5N2", "H5N4S1F1", "H5N4A1G1"))
+#'
+#' # From an existing composition (returns as-is)
 #' comp <- glycan_composition(c(Hex = 5, HexNAc = 2))
 #' as_glycan_composition(comp)
-#' 
-#' # Convert a glycan structure vector
+#'
+#' # From a glycan structure vector
 #' strucs <- c(n_glycan_core(), o_glycan_core_1())
 #' as_glycan_composition(strucs)
-#' 
-#' # Convert structures with substituents
+#'
+#' # From structures with substituents
 #' # (This will count both monosaccharides and any substituents present)
 #'
 #' @export
@@ -244,49 +256,103 @@ as_glycan_composition.glyrepr_structure <- function(x) {
 
 # Helper function to parse a single composition string
 parse_single_composition <- function(char) {
-  # Handle empty string - treat as empty composition
-  if (char == "" || is.na(char)) {
-    return(list(composition = NULL, valid = TRUE))
-  }
-  
-  # Try to parse the character string
-  tryCatch({
-    # Use regex to find all patterns like "MonoName(number)"
-    pattern <- "([A-Za-z0-9]+)\\((\\d+)\\)"
-    matches <- stringr::str_extract_all(char, pattern, simplify = FALSE)[[1]]
-
-    if (length(matches) == 0) {
-      return(list(composition = NULL, valid = FALSE))
-    }
-
-    # Check if the entire string was matched (no remaining characters)
-    total_matched_length <- sum(stringr::str_length(matches))
-    if (total_matched_length != stringr::str_length(char)) {
-      return(list(composition = NULL, valid = FALSE))
-    }
-
-    # Parse each match using stringr::str_match
-    parsed_matches <- purrr::map(matches, function(match) {
-      match_result <- stringr::str_match(match, pattern)
-      list(
-        name = match_result[1, 2],  # First capture group
-        count = as.integer(match_result[1, 3])  # Second capture group
-      )
-    })
-
-    # Extract names and counts
-    mono_names <- purrr::map_chr(parsed_matches, "name")
-    mono_counts <- purrr::map_int(parsed_matches, "count")
-
-    # Create named vector
-    comp <- mono_counts
-    names(comp) <- mono_names
-
-    return(list(composition = comp, valid = TRUE))
-
-  }, error = function(e) {
+  # Reject empty strings
+  if (char == "") {
     return(list(composition = NULL, valid = FALSE))
+  }
+
+  # Try each parser in sequence until one succeeds
+  parsers <- list(.parse_byonic_comp, .parse_simple_comp)
+  for (parser in parsers) {
+    result <- tryCatch(
+      {
+        composition <- parser(char)
+        list(composition = composition, valid = TRUE)
+      },
+      error = function(e) NULL
+    )
+    if (!is.null(result)) {
+      return(result)
+    }
+  }
+
+  # All parsers failed
+  list(composition = NULL, valid = FALSE)
+}
+
+.parse_byonic_comp <- function(x) {
+  # Use regex to find all patterns like "MonoName(number)"
+  pattern <- "([A-Za-z0-9]+)\\((\\d+)\\)"
+  matches <- stringr::str_extract_all(x, pattern, simplify = FALSE)[[1]]
+
+  if (length(matches) == 0) {
+    stop()
+  }
+
+  # Check if the entire string was matched (no remaining characters)
+  total_matched_length <- sum(stringr::str_length(matches))
+  if (total_matched_length != stringr::str_length(x)) {
+    stop()
+  }
+
+  # Parse each match using stringr::str_match
+  parsed_matches <- purrr::map(matches, function(match) {
+    match_result <- stringr::str_match(match, pattern)
+    list(
+      name = match_result[1, 2],  # First capture group
+      count = as.integer(match_result[1, 3])  # Second capture group
+    )
   })
+
+  # Extract names and counts
+  mono_names <- purrr::map_chr(parsed_matches, "name")
+  mono_counts <- purrr::map_int(parsed_matches, "count")
+
+  # Create named vector
+  comp <- mono_counts
+  names(comp) <- mono_names
+  comp
+}
+
+.parse_simple_comp <- function(x) {
+  # "S" and "A" are both NeuAc, "G" is NeuGc
+  mono_pattern <- "([HNFSAG])(\\d+)"
+  matches <- stringr::str_extract_all(x, mono_pattern, simplify = FALSE)[[1]]
+
+  # Check if no monos were matched
+  if (length(matches) == 0) {
+    stop()
+  }
+
+  # Check if the entire string was matched (no remaining characters)
+  total_matched_length <- sum(stringr::str_length(matches))
+  if (total_matched_length != stringr::str_length(x)) {
+    stop()
+  }
+
+  parsed_matches <- purrr::map(matches, function(match) {
+    match_result <- stringr::str_match(match, mono_pattern)
+    list(
+      name = match_result[1, 2],  # First capture group
+      count = as.integer(match_result[1, 3])  # Second capture group
+    )
+  })
+
+  mono_names <- purrr::map_chr(parsed_matches, "name")
+  mono_names <- dplyr::case_match(mono_names,
+    "H" ~ "Hex",
+    "N" ~ "HexNAc",
+    "F" ~ "dHex",
+    "S" ~ "NeuAc",
+    "A" ~ "NeuAc",
+    "G" ~ "NeuGc"
+  )
+  mono_counts <- purrr::map_int(parsed_matches, "count")
+
+  # Create named vector
+  comp <- mono_counts
+  names(comp) <- mono_names
+  comp
 }
 
 #' @rdname as_glycan_composition
@@ -295,6 +361,11 @@ as_glycan_composition.character <- function(x) {
   # Handle empty character vector
   if (length(x) == 0) {
     return(glycan_composition())
+  }
+
+  # Handling NA
+  if (any(is.na(x))) {
+    cli::cli_abort("Cannot parse NA as glycan composition.")
   }
   
   # Parse each character string using the helper function
@@ -314,10 +385,7 @@ as_glycan_composition.character <- function(x) {
       "i" = "Expected format: 'Hex(5)HexNAc(2)' with monosaccharide names followed by counts in parentheses."
     ))
   }
-  
-  # Filter out NULL entries (from empty strings)
-  compositions <- compositions[!purrr::map_lgl(compositions, is.null)]
-  
+
   # Handle case where all strings were empty
   if (length(compositions) == 0) {
     return(glycan_composition())

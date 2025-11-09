@@ -18,7 +18,7 @@ as_glycan_composition(comp_list)
 
 ## -----------------------------------------------------------------------------
 # Copy-paste from your mass spec software? No problem!
-as_glycan_composition(c("Hex(5)HexNAc(2)", "Gal(1)GalNAc(1)"))
+as_glycan_composition(c("Hex(5)HexNAc(2)", "H1N1"))
 
 ## -----------------------------------------------------------------------------
 comp <- glycan_composition(
@@ -59,6 +59,16 @@ toc()
 tic("Converting 5,000 structures")
 result_large <- convert_to_generic(large_struc)
 toc()
+
+## -----------------------------------------------------------------------------
+glycans <- as_glycan_structure(c(
+  "Gal(b1-3)GalNAc(a1-",
+  "Gal(b1-?)GalNAc(a1-",
+  "Gal(??-?)GalNAc(??-",
+  "Hex(??-?)HexNAc(??-",
+  "Hex(b1-3)HexNAc(a1-"
+))
+get_structure_level(glycans)
 
 ## -----------------------------------------------------------------------------
 remove_linkages(struc)

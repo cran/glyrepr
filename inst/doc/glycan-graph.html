@@ -364,9 +364,9 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glycan <span class="ot">&lt;-</span> <span class="fu">n_glycan_core</span>()</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>graph <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(glycan)</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>graph</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; IGRAPH abde093 DN-- 5 4 -- </span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; IGRAPH 3c483d5 DN-- 5 4 -- </span></span>
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; + attr: anomer (g/c), name (v/c), mono (v/c), sub (v/c), linkage (e/c)</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; + edges from abde093 (vertex names):</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; + edges from 3c483d5 (vertex names):</span></span>
 <span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 3-&gt;1 3-&gt;2 4-&gt;3 5-&gt;4</span></span></code></pre></div>
 <p>Let’s decode what we’re seeing here 🕵️:</p>
 <p><strong>First line:</strong> Directed Named (“DN”) graph with 5 vertices (sugar units) and 4 edges (bonds). Think of it as a family tree with 5 people and 4 relationships.</p>
@@ -443,7 +443,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <p><strong>Example 2:</strong> Explore the structure with breadth-first search:</p>
 <div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>bfs_result <span class="ot">&lt;-</span> igraph<span class="sc">::</span><span class="fu">bfs</span>(graph, <span class="at">root =</span> <span class="dv">1</span>, <span class="at">mode =</span> <span class="st">&quot;out&quot;</span>)</span>
 <span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>bfs_result<span class="sc">$</span>order</span>
-<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; + 5/5 vertices, named, from abde093:</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; + 5/5 vertices, named, from 3c483d5:</span></span>
 <span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 1 2 3 4 5</span></span></code></pre></div>
 </div>
 <div id="level-up-with-smap-functions" class="section level3">
