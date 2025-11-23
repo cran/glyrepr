@@ -42,6 +42,15 @@ There are two types of monosaccharides:
 For the full list of monosaccharides, use \code{\link[=available_monosaccharides]{available_monosaccharides()}}.
 }
 
+\section{Special monosaccharides}{
+Some monosaccharides are special in that they have no generic names in database or literature.
+For example, "Mur" is a rare monosaccharide that has no popular generic name.
+In \code{glyrepr}, we assign a "g" prefix to these monosaccharides as their generic names.
+This includes "gNeu", "gKdn", "gPse", "gLeg", "gAci", "g4eLeg", "gBac", "gKdo", "gMur".
+These names might only be meaningful inside \code{glycoverse}.
+Take care when you export results from \code{glycoverse} functions to other analysis tools.
+}
+
 \examples{
 # Character vector
 get_mono_type(c("Gal", "Hex"))
@@ -53,6 +62,14 @@ get_mono_type(n_glycan_core(mono_type = "generic"))
 # Glycan compositions
 comp <- glycan_composition(c(Glc = 2, GalNAc = 1))
 get_mono_type(comp)
+
+# Special cases
+comps <- glycan_composition(
+  c(Neu = 1),
+  c(Neu = 1, Glc = 1),
+  c(gMur = 1, Hex = 1),
+)
+get_mono_type(comps)
 
 }
 \seealso{

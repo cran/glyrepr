@@ -81,6 +81,13 @@ struc[5]
 remove_substituents(struc[5])
 
 ## -----------------------------------------------------------------------------
+convert_to_generic(struc)
+
+## -----------------------------------------------------------------------------
+reduce_structure_level(struc, to_level = "basic")
+# Same as remove_linkages() then convert_to_generic()
+
+## -----------------------------------------------------------------------------
 comp <- as_glycan_composition(struc)
 comp
 

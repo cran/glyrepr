@@ -41,6 +41,19 @@ test_that("count_mono works with compositions", {
   expect_equal(count_mono(comp2, "Man"), 0)  # Not present
 })
 
+test_that("count_mono works for compositions unable to be converted to generic", {
+  comp <- glycan_composition(c(GlcNAc = 2, Kdn = 1))
+  expect_equal(count_mono(comp, "HexNAc"), 2)
+  expect_equal(count_mono(comp, "Kdn"), 1)
+})
+
+test_that("count_mono works for compositions with special monosaccharides", {
+  comp <- glycan_composition(c(gNeu = 1, Hex = 1))
+  expect_equal(count_mono(comp, "gNeu"), 1)
+  expect_equal(count_mono(comp, "Hex"), 1)
+  expect_equal(count_mono(comp, "Glc"), NA_integer_)
+})
+
 test_that("count_mono works when counting generic in concrete compositions", {
   # When mono is generic, it should count all matching concrete monos
   comp <- glycan_composition(c(Glc = 2, Gal = 1, Man = 1, GlcNAc = 2, GalNAc = 1))
@@ -73,6 +86,17 @@ test_that("count_mono works with multiple compositions", {
 test_that("count_mono works with `mono` as NULL", {
   comp <- glycan_composition(c(Hex = 5, HexNAc = 2), c(Gal = 1, Man = 1, GalNAc = 1))
   expect_equal(count_mono(comp), c(7L, 3L))
+})
+
+test_that("`include_subs` works when `mono` is NULL", {
+  comp <- glycan_composition(c(Glc = 1, S = 1))
+  expect_equal(count_mono(comp), 1L)
+  expect_equal(count_mono(comp, include_subs = TRUE), 2L)
+})
+
+test_that("count_mono works for substituents", {
+  comp <- glycan_composition(c(Glc = 1, S = 1), c(Glc = 1))
+  expect_equal(count_mono(comp, "S"), c(1L, 0L))
 })
 
 # Tests for count_mono with glycan structures ----------------------------

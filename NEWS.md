@@ -1,3 +1,19 @@
+# glyrepr 0.9.0
+
+## New features
+
+* Update the monosaccharides table, ensuring all monosaccharides having generic names:
+  * Add generic monosaccharides to Ara, Lyx, Xyl, Rib, Api, Neu, Kdn, Pse, Leg, Aci, 4eLeg, Bac, LDmanHep, DDmanHep, Kdo, Dha, MurNAc, MurNGc, Mur, Fru, Tag, Sor, Psi.
+  * Rename "Pent" to "Pen".
+  * Delete "Sia" from the table.
+* `count_mono()` now supports counting substituents, with a new argument `include_subs`.
+* Add `reduce_structure_level()` to reduce a glycan structure to a lower resolution level.
+
+## Minor improvements and bug fixes
+
+* Fix the bug that `convert_to_generic()` fails with glycan compositions containing substituents.
+* Fix the bug that `has_linkages()` didn't consider reducing end anomers, which influenced the results of `get_structure_level()`.
+
 # glyrepr 0.8.0
 
 ## Breaking changes

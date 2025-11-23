@@ -145,9 +145,7 @@ convert_to_generic.glyrepr_composition <- function(x) {
       result <- as.integer(result)
       names(result) <- result_names  # Restore names
 
-      # Sort by monosaccharide order
-      mono_order <- get_monosaccharide_order(names(result))
-      result <- result[order(mono_order)]
+      result <- .reorder_composition_components(result, "generic")
     }
 
     result
@@ -173,6 +171,15 @@ convert_to_generic.glyrepr_composition <- function(x) {
 #'
 #' For the full list of monosaccharides, use [available_monosaccharides()].
 #'
+#' # Special monosaccharides
+#'
+#' Some monosaccharides are special in that they have no generic names in database or literature.
+#' For example, "Mur" is a rare monosaccharide that has no popular generic name.
+#' In `glyrepr`, we assign a "g" prefix to these monosaccharides as their generic names.
+#' This includes "gNeu", "gKdn", "gPse", "gLeg", "gAci", "g4eLeg", "gBac", "gKdo", "gMur".
+#' These names might only be meaningful inside `glycoverse`.
+#' Take care when you export results from `glycoverse` functions to other analysis tools.
+#'
 #' @param x Either of these objects:
 #'   - A character vector of monosaccharide names;
 #'   - A glycan composition vector ("glyrepr_composition" object);
@@ -184,14 +191,22 @@ convert_to_generic.glyrepr_composition <- function(x) {
 #' @examples
 #' # Character vector
 #' get_mono_type(c("Gal", "Hex"))
-#' 
+#'
 #' # Glycan structures
 #' get_mono_type(n_glycan_core(mono_type = "concrete"))
 #' get_mono_type(n_glycan_core(mono_type = "generic"))
-#' 
+#'
 #' # Glycan compositions
 #' comp <- glycan_composition(c(Glc = 2, GalNAc = 1))
 #' get_mono_type(comp)
+#'
+#' # Special cases
+#' comps <- glycan_composition(
+#'   c(Neu = 1),
+#'   c(Neu = 1, Glc = 1),
+#'   c(gMur = 1, Hex = 1),
+#' )
+#' get_mono_type(comps)
 #'
 #' @seealso [convert_to_generic()]
 #'
@@ -205,12 +220,14 @@ get_mono_type <- function(x) {
 get_mono_type.character <- function(x) {
   checkmate::assert_character(x)
   result <- vector("character", length = length(x))
-  result[x %in% monosaccharides$concrete] <- "concrete"
-  result[x %in% monosaccharides$generic] <- "generic"
-  unknown <- x[result == ""]
-  if (length(unknown) > 0) {
-    cli::cli_abort("Unknown monosaccharide: {.val {unknown}}.")
+  is_concrete <- x %in% monosaccharides$concrete
+  is_generic <- x %in% monosaccharides$generic
+  is_unknown <- !(is_concrete | is_generic)
+  if (any(is_unknown)) {
+    cli::cli_abort("Unknown monosaccharide: {.val {x[is_unknown]}}.")
   }
+  result[is_concrete] <- "concrete"
+  result[is_generic] <- "generic"
   result
 }
 
@@ -223,7 +240,7 @@ get_mono_type.glyrepr_structure <- function(x) {
       "i" = "Use `glycan_structure()` to create a glyrepr_structure from igraph objects."
     ))
   }
-  
+
   data <- vctrs::vec_data(x)
   vctrs::field(data, "mono_type")
 }
@@ -237,15 +254,40 @@ get_mono_type.glyrepr_composition <- function(x) {
       "i" = "Use `glycan_composition()` to create a glyrepr_composition from named vectors."
     ))
   }
-  
+
   data <- vctrs::vec_data(x)
   vctrs::field(data, "mono_type")
 }
 
+#' Decide mono type from a vector of monosaccharide names
+#'
+#' This function handles the special cases where some monosaccharides
+#' have the same name for both generic and concrete types.
+#' For example, "Mur" is both a generic and concrete monosaccharide.
+#'
+#' This function is used internally when creating [glycan_composition()] and [glycan_structure()].
+#'
+#' @param x A character vector of monosaccharide names.
+#' @returns A character scalar of monosaccharide type. Can be "concrete", "generic", "mixed", or "unknown".
+#' @noRd
+get_mono_type_impl <- function(x) {
+  types <- tryCatch(
+    get_mono_type.character(x),
+    error = function(e) "unknown"
+  )
+
+  unique_types <- unique(types)
+  if (length(unique_types) > 1) {
+    "mixed"
+  } else {
+    unique_types[[1]]
+  }
+}
+
 get_graph_mono_type <- function(graph) {
   # This function is the implementation of get_mono_type for a single glycan graph.
-  first_mono <- igraph::vertex_attr(graph, "mono")[[1]]
-  get_mono_type(first_mono)
+  monos <- igraph::vertex_attr(graph, "mono")
+  get_mono_type_impl(monos)
 }
 
 convert_mono_type_ <- function(mono, from, to) {
@@ -253,6 +295,9 @@ convert_mono_type_ <- function(mono, from, to) {
 }
 
 convert_one_mono_type <- function(mono, from, to) {
+  if (mono %in% available_substituents()) {
+    return(mono)
+  }
   from_ <- monosaccharides[[from]]
   to_ <- monosaccharides[[to]]
   to_[match(mono, from_)]  # it might be NA
