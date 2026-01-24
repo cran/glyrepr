@@ -84,7 +84,7 @@ test_that("count_mono works with multiple compositions", {
 })
 
 test_that("count_mono works with `mono` as NULL", {
-  comp <- glycan_composition(c(Hex = 5, HexNAc = 2), c(Gal = 1, Man = 1, GalNAc = 1))
+  comp <- glycan_composition(c(Man = 5, GlcNAc = 2), c(Gal = 1, Man = 1, GalNAc = 1))
   expect_equal(count_mono(comp), c(7L, 3L))
 })
 
@@ -97,6 +97,36 @@ test_that("`include_subs` works when `mono` is NULL", {
 test_that("count_mono works for substituents", {
   comp <- glycan_composition(c(Glc = 1, S = 1), c(Glc = 1))
   expect_equal(count_mono(comp, "S"), c(1L, 0L))
+})
+
+test_that("count_mono preserves NA in compositions", {
+  # Composition with NA element - total count (mono = NULL)
+  comps <- glycan_composition(c(Gal = 1), NA)
+  expect_equal(count_mono(comps), c(1L, NA_integer_))
+
+  # NA in different positions - total count
+  comps2 <- glycan_composition(NA, c(Gal = 1))
+  expect_equal(count_mono(comps2), c(NA_integer_, 1L))
+
+  comps3 <- glycan_composition(c(Gal = 1), NA, c(GlcNAc = 2))
+  expect_equal(count_mono(comps3), c(1L, NA_integer_, 2L))
+
+  # Composition with NA element - specific mono count
+  comps4 <- glycan_composition(c(Gal = 1), NA)
+  expect_equal(count_mono(comps4, "Gal"), c(1L, NA_integer_))
+  expect_equal(count_mono(comps4, "Hex"), c(1L, NA_integer_))
+  expect_equal(count_mono(comps4, "Glc"), c(0L, NA_integer_))
+
+  # NA in different positions - specific mono count
+  comps5 <- glycan_composition(NA, c(Gal = 1, GlcNAc = 1))
+  expect_equal(count_mono(comps5, "Gal"), c(NA_integer_, 1L))
+  expect_equal(count_mono(comps5, "HexNAc"), c(NA_integer_, 1L))
+  expect_equal(count_mono(comps5, "Man"), c(NA_integer_, 0L))
+
+  # Multiple NAs - specific mono count
+  comps6 <- glycan_composition(c(Gal = 1), NA, c(GlcNAc = 2), NA)
+  expect_equal(count_mono(comps6, "Gal"), c(1L, NA_integer_, 0L, NA_integer_))
+  expect_equal(count_mono(comps6, "HexNAc"), c(0L, NA_integer_, 2L, NA_integer_))
 })
 
 # Tests for count_mono with glycan structures ----------------------------
@@ -120,7 +150,7 @@ test_that("count_mono works with multiple structures", {
   # Test with N-glycan and O-glycan cores
   n_glycan <- n_glycan_core()
   o_glycan <- o_glycan_core_1()
-  struct_vec <- glycan_structure(n_glycan, o_glycan)
+  struct_vec <- c(n_glycan, o_glycan)
   
   # N-glycan core has: 2 GlcNAc, 3 Man; O-glycan core has: 1 GalNAc, 1 Gal
   expect_equal(count_mono(struct_vec, "GlcNAc"), c(2, 0))

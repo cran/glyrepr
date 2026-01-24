@@ -9,11 +9,11 @@ library(glyrepr)
 
 ## -----------------------------------------------------------------------------
 # Just tell R what you have
-glycan_composition(c(Hex = 5, HexNAc = 2), c(Gal = 1, GalNAc = 1))
+glycan_composition(c(Man = 5, GlcNAc = 2), c(Gal = 1, GalNAc = 1))
 
 ## -----------------------------------------------------------------------------
 # Perfect when you're processing data from files or databases
-comp_list <- list(c(Hex = 5, HexNAc = 2), c(Gal = 1, GalNAc = 1))
+comp_list <- list(c(Man = 5, GlcNAc = 2), c(Gal = 1, GalNAc = 1))
 as_glycan_composition(comp_list)
 
 ## -----------------------------------------------------------------------------
@@ -21,10 +21,7 @@ as_glycan_composition(comp_list)
 as_glycan_composition(c("Hex(5)HexNAc(2)", "H1N1"))
 
 ## -----------------------------------------------------------------------------
-comp <- glycan_composition(
-  c(Hex = 5, HexNAc = 2),          # generic sugars
-  c(Gal = 1, Man = 1, GalNAc = 1)  # concrete sugars
-)
+comp <- glycan_composition(c(Gal = 1, Man = 1, GalNAc = 1))
 
 # How many galactose residues?
 count_mono(comp, "Gal")
@@ -61,14 +58,20 @@ result_large <- convert_to_generic(large_struc)
 toc()
 
 ## -----------------------------------------------------------------------------
-glycans <- as_glycan_structure(c(
+# Concrete structures (various linkage detail levels)
+concrete_glycans <- as_glycan_structure(c(
   "Gal(b1-3)GalNAc(a1-",
   "Gal(b1-?)GalNAc(a1-",
-  "Gal(??-?)GalNAc(??-",
+  "Gal(??-?)GalNAc(??-"
+))
+get_structure_level(concrete_glycans)
+
+# Generic structures
+generic_glycans <- as_glycan_structure(c(
   "Hex(??-?)HexNAc(??-",
   "Hex(b1-3)HexNAc(a1-"
 ))
-get_structure_level(glycans)
+get_structure_level(generic_glycans)
 
 ## -----------------------------------------------------------------------------
 remove_linkages(struc)

@@ -107,6 +107,18 @@ databases
 }
 }
 
+\section{NA Support}{
+Glycan structure vectors support NA values for representing missing or
+unknown structures:
+\itemize{
+\item Create with \code{glycan_structure(NA)} or \code{glycan_structure(NULL)}
+\item Combine with valid structures: \code{c(struct1, NA, struct2)}
+\item Convert from character: \code{as_glycan_structure(c("Glc(a1-", NA))}
+\item \code{smap} functions skip NA elements gracefully
+\item \code{is.na()} returns \code{TRUE} for NA elements
+}
+}
+
 \examples{
 library(igraph)
 
@@ -125,10 +137,6 @@ print(simple_struct)
 n_core <- n_glycan_core()  # N-glycan core structure
 o_core1 <- o_glycan_core_1()  # O-glycan Core 1 structure
 
-# Create vector with multiple structures
-multi_struct <- glycan_structure(n_core, o_core1)
-print(multi_struct)
-
 # Example 3: Create complex structure with substituents
 complex_graph <- make_graph(~ 1-+2-+3)
 V(complex_graph)$mono <- c("GlcNAc", "Gal", "Neu5Ac")
@@ -142,9 +150,5 @@ print(complex_struct)
 # Example 4: Check if object is a glycan structure
 is_glycan_structure(simple_struct)  # TRUE
 is_glycan_structure(graph)          # FALSE
-
-# Example 5: Mix different input types
-mixed_struct <- glycan_structure(graph, o_glycan_core_2(), simple_struct)
-print(mixed_struct)
 
 }

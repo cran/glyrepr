@@ -58,6 +58,10 @@ These functions only compute \code{.f} once for each unique combination of struc
 \code{.y} value, then map the results back to the original vector positions. This is much more efficient
 than applying \code{.f} to each element pair individually when there are duplicate structure-value combinations.
 
+\strong{NA Handling:}
+NA elements in \code{.x} are preserved in the output - the function is not applied to NA positions,
+and the corresponding results are set to NA.
+
 \strong{Return Types:}
 \itemize{
 \item \code{smap2()}: Returns a list with the same length as \code{.x}
@@ -73,13 +77,13 @@ than applying \code{.f} to each element pair individually when there are duplica
 # Create structure vectors with duplicates
 core1 <- o_glycan_core_1()
 core2 <- n_glycan_core()
-structures <- glycan_structure(core1, core2, core1)  # core1 appears twice
+structures <- c(core1, core2, core1)  # core1 appears twice
 weights <- c(1.0, 2.0, 1.0)  # corresponding weights
 
 # Map a function that uses both structure and weight
 smap2_dbl(structures, weights, function(g, w) igraph::vcount(g) * w)
 
-# Use purrr-style lambda functions  
+# Use purrr-style lambda functions
 smap2_dbl(structures, weights, ~ igraph::vcount(.x) * .y)
 
 # Test with recycling (single weight for all structures)

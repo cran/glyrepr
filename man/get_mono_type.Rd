@@ -24,8 +24,10 @@ get_mono_type(x)
 }}
 }
 \value{
-A character vector specifying the monosaccharide type(s).
-For structures and compositions, returns the type for each element.
+\itemize{
+\item For character input, returns a character vector of the same length as \code{x}.
+\item For \code{glyrepr_structure} and \code{glyrepr_composition} input, returns a character scalar.
+}
 }
 \description{
 This function determines the type of monosaccharides in character vectors,
@@ -62,14 +64,6 @@ get_mono_type(n_glycan_core(mono_type = "generic"))
 # Glycan compositions
 comp <- glycan_composition(c(Glc = 2, GalNAc = 1))
 get_mono_type(comp)
-
-# Special cases
-comps <- glycan_composition(
-  c(Neu = 1),
-  c(Neu = 1, Glc = 1),
-  c(gMur = 1, Hex = 1),
-)
-get_mono_type(comps)
 
 }
 \seealso{

@@ -1,18 +1,27 @@
 #' Reorder Vertices and Edges
 #'
 #' @description
-#' Reorder the vertices and edges of all underlying graphs of a [glycan_structure()] object,
-#' to be in line with the IUPAC-style sequence.
+#' Reorder the vertices and edges of a list of glycan graphs to be in line
+#' with the IUPAC-style sequence.
 #'
-#' @param x A [glycan_structure()] object.
-#' @returns A [glycan_structure()] object with the underlying graphs reordered.
+#' @param graphs A list of igraph graph objects.
+#' @returns A list of reordered igraph graph objects.
 #' @noRd
-reorder_graphs <- function(x) {
-  checkmate::assert_class(x, "glyrepr_structure")
-  old_structures <- attr(x, "structures")
-  new_structures <- purrr::map(old_structures, .reorder_one_graph)
-  attr(x, "structures") <- new_structures
-  x
+reorder_graphs <- function(graphs) {
+  checkmate::assert_list(graphs, types = "igraph")
+  purrr::map(graphs, .reorder_one_graph)
+}
+
+#' Reorder graphs and return indices mapping
+#'
+#' @param graphs A list of igraph graph objects.
+#' @returns A list with 'graphs' (reordered graphs) and 'indices' (original indices).
+#' @noRd
+reorder_graphs_with_indices <- function(graphs) {
+  checkmate::assert_list(graphs, types = "igraph")
+  n <- length(graphs)
+  reordered <- purrr::map(graphs, .reorder_one_graph)
+  list(graphs = reordered, indices = seq_len(n))
 }
 
 .reorder_one_graph <- function(graph) {

@@ -56,8 +56,10 @@ Similar to purrr pmap functions, but optimized for glycan structure vectors.
 }
 \details{
 These functions only compute \code{.f} once for each unique combination of structure and corresponding
-values from other vectors, then map the results back to the original vector positions. This is much more efficient
-than applying \code{.f} to each element combination individually when there are duplicate combinations.
+values from other vectors, then map the results back to the original vector positions.
+
+\strong{NA Handling:}
+NA elements in the first argument (glycan structure vector) are preserved in the output.
 
 \strong{Time Complexity Performance:}
 
@@ -80,7 +82,7 @@ Scaling factor shows time increase when vector size increases 20x.
 # Create structure vectors with duplicates
 core1 <- o_glycan_core_1()
 core2 <- n_glycan_core()
-structures <- glycan_structure(core1, core2, core1)  # core1 appears twice
+structures <- c(core1, core2, core1)  # core1 appears twice
 weights <- c(1.0, 2.0, 1.0)  # corresponding weights
 factors <- c(2, 3, 2)  # corresponding factors
 
@@ -88,7 +90,7 @@ factors <- c(2, 3, 2)  # corresponding factors
 spmap_dbl(list(structures, weights, factors), 
           function(g, w, f) igraph::vcount(g) * w * f)
 
-# Use purrr-style lambda functions  
+# Use purrr-style lambda functions
 spmap_dbl(list(structures, weights, factors), ~ igraph::vcount(..1) * ..2 * ..3)
 
 # Test with recycling

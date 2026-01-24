@@ -1,11 +1,3 @@
-test_that("get_mono_type with mixed input works", {
-  struct1 <- n_glycan_core(mono_type = "concrete")
-  struct2 <- n_glycan_core(mono_type = "generic")
-  strucs <- c(struct1, struct2)
-  expected <- c("concrete", "generic")
-  expect_equal(get_mono_type(strucs), expected)
-})
-
 test_that("get mono type of structures", {
   glycan <- n_glycan_core(mono_type = "concrete")
   expect_equal(get_mono_type(glycan), "concrete")
@@ -30,11 +22,30 @@ test_that("get_mono_type of unknown monosaccharides", {
 })
 
 test_that("get mono type of composition", {
-  comp_generic <- glycan_composition(c(Hex = 4, HexNAc = 1))
+  comp_generic <- glycan_composition(c(Hex = 4, HexNAc = 1), c(Hex = 1, HexNAc = 1))
   comp_concrete <- glycan_composition(c(Gal = 4, GlcNAc = 1))
 
   expect_equal(get_mono_type(comp_generic), "generic")
   expect_equal(get_mono_type(comp_concrete), "concrete")
+})
+
+test_that("get_mono_type of composition with substituents", {
+  # Concrete composition with sulfate substituent
+  comp_sulfate <- glycan_composition(c(Gal = 2, GlcNAc = 1, S = 1))
+  expect_equal(get_mono_type(comp_sulfate), "concrete")
+
+  # Generic composition with methyl substituent
+  comp_methyl <- glycan_composition(c(Hex = 2, HexNAc = 1, Me = 1))
+  expect_equal(get_mono_type(comp_methyl), "generic")
+
+  # Composition with multiple different substituents
+  comp_multi_sub <- glycan_composition(c(Gal = 3, GlcNAc = 2, S = 1, Ac = 1))
+  expect_equal(get_mono_type(comp_multi_sub), "concrete")
+})
+
+test_that("get mono type of empty composition", {
+  comp_empty <- glycan_composition()
+  expect_equal(get_mono_type(comp_empty), character())
 })
 
 # Tests for convert_to_generic function
@@ -69,11 +80,7 @@ test_that("convert_to_generic works with glycan compositions", {
   comp_generic <- convert_to_generic(comp_concrete)
 
   expect_true(is_glycan_composition(comp_generic))
-  data <- vctrs::vec_data(comp_generic)
-  expect_equal(vctrs::field(data, "mono_type"), "generic")
-  # Check that the conversion aggregated correctly (Gal -> Hex)
-  comp_data <- vctrs::field(data, "data")[[1]]
-  expect_equal(comp_data, c(Hex = 2, HexNAc = 1))
+  expect_equal(as.character(comp_generic), "Hex(2)HexNAc(1)")
 })
 
 test_that("convert_to_generic works with glycan compositions with substituents", {
@@ -87,4 +94,57 @@ test_that("convert_to_generic with already generic composition returns same", {
   comp_generic <- glycan_composition(c(Hex = 2, HexNAc = 1))
   result <- convert_to_generic(comp_generic)
   expect_identical(result, comp_generic)
+})
+
+test_that("convert_to_generic with empty composition returns empty composition", {
+  comp_empty <- glycan_composition()
+  result <- convert_to_generic(comp_empty)
+  expect_equal(result, comp_empty)
+})
+
+test_that("convert_to_generic preserves NA in compositions", {
+  # NA as second element
+  comps1 <- glycan_composition(c(Gal = 1), NA)
+  result1 <- convert_to_generic(comps1)
+  expect_equal(length(result1), 2)
+  expect_equal(as.character(result1[1]), "Hex(1)")
+  expect_true(is.na(result1[2]))
+
+  # NA as first element
+  comps2 <- glycan_composition(NA, c(Gal = 1))
+  result2 <- convert_to_generic(comps2)
+  expect_equal(length(result2), 2)
+  expect_true(is.na(result2[1]))
+  expect_equal(as.character(result2[2]), "Hex(1)")
+
+  # NA in the middle
+  comps3 <- glycan_composition(c(Gal = 1), NA, c(GlcNAc = 2))
+  result3 <- convert_to_generic(comps3)
+  expect_equal(length(result3), 3)
+  expect_equal(as.character(result3[1]), "Hex(1)")
+  expect_true(is.na(result3[2]))
+  expect_equal(as.character(result3[3]), "HexNAc(2)")
+})
+
+test_that("convert_to_generic handles NA in glyrepr_structure", {
+  # Create structure vector with NA
+  # Use valid IUPAC-condensed strings from existing structures
+  glycans <- as_glycan_structure(c("Gal(b1-3)GalNAc(a1-", NA, "Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-"))
+
+  result <- convert_to_generic(glycans)
+  expect_equal(length(result), 3)
+  expect_false(is.na(result[1]))
+  expect_true(is.na(result[2]))
+  expect_false(is.na(result[3]))
+
+  # Verify non-NA elements are converted
+  expect_true(all(grepl("Hex", as.character(result[!is.na(result)]))))
+})
+
+test_that("convert_to_generic with all NA structures", {
+  # All NA elements
+  glycans <- as_glycan_structure(c(NA, NA))
+  result <- convert_to_generic(glycans)
+  expect_equal(length(result), 2)
+  expect_true(all(is.na(result)))
 })

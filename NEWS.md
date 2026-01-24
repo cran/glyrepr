@@ -1,3 +1,26 @@
+# glyrepr 0.10.0
+
+We have redesigned the internal implementation of `glyrepr_composition` and `glyrepr_structure`. This brought native support for names to `glyrepr_structure`, and NA values to both `glyrepr_structure` and `glyrepr_composition`.
+
+## New features
+
+* `smap()`, `smap2()`, `spmap()`, `simap()` and their variants now preserve
+  names from input `glyrepr_structure` vectors in their output.
+* `glyrepr_structure` now formally supports names. All operations on a named `glyrepr_structure` vectors preserve the names.
+* NA values are supported for `glyrepr_structure` and `glyrepr_composition`. Any operation on a `glyrepr_structure` or `glyrepr_composition` vector with NA values behave intuitively. `is.na()` now works for these two classes.
+* `glycan_composition()` now accepts another `glyrepr_composition` vector as input, returning it as-is.
+
+## Breaking changes
+
+* `glyrepr_composition` and `glyrepr_structure` now enforce the same monosaccharide type ("concrete" or "generic") within a vector. Mixed types are not allowed anymore. This invariant is enforced both when creating new vectors and when combining existing vectors.
+* `glycan_structure()` now does not support multiple `glyrepr_structure` vectors as input anymore. For example, `glycan_structure(o_glycan_core_1(), o_glycan_core_2())` is not valid anymore. Please use `c(o_glycan_core_1(), o_glycan_core_2())` instead.
+* `get_mono_type()` now returns a character scalar instead of a character vector for `glyrepr_structure` and `glyrepr_composition`.
+
+## Minor improvements and bug fixes
+
+* Subsetting `glyrepr_structure` with `integer(0)` and `NULL` correctly removes all underlying graphs.
+* `[[<-` is forbidden on `glyrepr_structure` vectors. Previously, the operation could be performed silently, but resulted in an invalid object.
+
 # glyrepr 0.9.0
 
 ## New features
