@@ -1,3 +1,9 @@
+# glyrepr 0.10.1
+
+## Minor improvements and bug fixes
+
+* Use `dplyr::recode_values()` to replace deprecated `dplyr::case_match()` to prevent warnings from `dplyr`.
+
 # glyrepr 0.10.0
 
 We have redesigned the internal implementation of `glyrepr_composition` and `glyrepr_structure`. This brought native support for names to `glyrepr_structure`, and NA values to both `glyrepr_structure` and `glyrepr_composition`.
