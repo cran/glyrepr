@@ -1,6 +1,6 @@
 Package: glyrepr
 Title: Representation for Glycan Compositions and Structures
-Version: 0.10.1
+Version: 0.11.0
 Authors@R: 
     person("Bin", "Fu", , "23110220018@m.fudan.edu.cn", role = c("aut", "cre", "cph"),
            comment = c(ORCID = "0000-0001-8567-2997"))
@@ -25,8 +25,8 @@ Imports: checkmate, cli, dplyr, furrr, future, glue, igraph, magrittr,
 VignetteBuilder: knitr
 BugReports: https://github.com/glycoverse/glyrepr/issues
 NeedsCompilation: no
-Packaged: 2026-02-13 06:10:12 UTC; fubin
+Packaged: 2026-04-26 14:37:55 UTC; fubin
 Author: Bin Fu [aut, cre, cph] (ORCID: <https://orcid.org/0000-0001-8567-2997>)
 Maintainer: Bin Fu <23110220018@m.fudan.edu.cn>
 Repository: CRAN
-Date/Publication: 2026-02-13 07:00:36 UTC
+Date/Publication: 2026-04-26 15:00:02 UTC

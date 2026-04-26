@@ -20,7 +20,8 @@
 #'
 #' Components are automatically sorted with monosaccharides first (according to
 #' their order in the monosaccharides table), followed by substituents (according
-#' to their order in `available_substituents()`).
+#' to their order in `available_substituents()`). Duplicate components are
+#' automatically summed.
 #'
 #' @examples
 #' # A vector with one composition (generic monosaccharides)
@@ -46,23 +47,34 @@ glycan_composition <- function(...) {
 
   # Handle NULL/NA inputs - convert to list elements that will be stored as NULL
   # Only unnamed NA/NULL are treated as missing; named NA (e.g., c(Hex = NA)) is invalid
-  x <- purrr::map(args, ~ {
-    if (is.null(.x)) {
-      NULL  # Store as NULL to represent NA
-    } else if (is.atomic(.x) && length(.x) == 1 && is.na(.x) && is.null(names(.x))) {
-      NULL  # Unnamed scalar NA treated as missing
-    } else {
-      .valid_composition_element(.x)
+  x <- purrr::map(
+    args,
+    ~ {
+      if (is.null(.x)) {
+        NULL # Store as NULL to represent NA
+      } else if (
+        is.atomic(.x) && length(.x) == 1 && is.na(.x) && is.null(names(.x))
+      ) {
+        NULL # Unnamed scalar NA treated as missing
+      } else {
+        .valid_composition_element(.x)
+      }
     }
-  })
+  )
 
   # Process non-NA elements
-  x <- purrr::map(x, ~ {
-    if (is.null(.x)) return(.x)
-    result <- as.integer(.x)
-    names(result) <- names(.x)
-    .reorder_composition_components(result)
-  })
+  x <- purrr::map(
+    x,
+    ~ {
+      if (is.null(.x)) {
+        return(.x)
+      }
+      result <- as.integer(.x)
+      names(result) <- names(.x)
+      result <- .aggregate_composition_components(result)
+      .reorder_composition_components(result)
+    }
+  )
 
   .valid_glycan_composition_input(x)
   new_glycan_composition(x)
@@ -95,6 +107,12 @@ is_glycan_composition <- function(x) {
 #' are counted. Substituents are extracted from the `sub` attribute of each
 #' vertex in the structure. For example, a vertex with `sub = "3Me"`
 #' contributes one "Me" substituent to the composition.
+#'
+#' Simple composition strings use one-letter residue codes: "H" for "Hex",
+#' "N" for "HexNAc", "F" for "dHex", "S"/"A" for "NeuAc", and "G" for
+#' "NeuGc". "E" and "L" are also accepted as linkage-specific Neu5Ac codes;
+#' they are converted to "NeuAc" with a warning because composition objects do
+#' not preserve linkage information.
 #'
 #' @examples
 #' # From a single named vector
@@ -132,13 +150,16 @@ vec_ptype_abbr.glyrepr_composition <- function(x, ...) "comp"
 format.glyrepr_composition <- function(x, ...) {
   data <- vctrs::field(vctrs::vec_data(x), "data")
 
-  formatted <- purrr::map_chr(data, ~ {
-    if (.is_na_composition_elem(.x)) {
-      "<NA>"
-    } else {
-      paste0(names(.x), "(", .x, ")", collapse = "")
+  formatted <- purrr::map_chr(
+    data,
+    ~ {
+      if (.is_na_composition_elem(.x)) {
+        "<NA>"
+      } else {
+        paste0(names(.x), "(", .x, ")", collapse = "")
+      }
     }
-  })
+  )
 
   formatted
 }
@@ -198,18 +219,22 @@ vec_cast.glyrepr_composition.character <- function(x, to, ...) {
       }
 
       compositions <- purrr::map(parse_result, "composition")
+      .warn_lossy_neuac_linkage(parse_result)
     }
 
     # Build result list preserving order - no global state needed
-    result_list <- purrr::map(seq_along(x), ~ {
-      if (na_mask[.x]) {
-        NULL
-      } else {
-        # Find which composition this position corresponds to
-        pos_in_non_na <- match(.x, non_na_positions)
-        compositions[[pos_in_non_na]]
+    result_list <- purrr::map(
+      seq_along(x),
+      ~ {
+        if (na_mask[.x]) {
+          NULL
+        } else {
+          # Find which composition this position corresponds to
+          pos_in_non_na <- match(.x, non_na_positions)
+          compositions[[pos_in_non_na]]
+        }
       }
-    })
+    )
 
     return(do.call(glycan_composition, result_list))
   }
@@ -225,6 +250,7 @@ vec_cast.glyrepr_composition.character <- function(x, to, ...) {
       "i" = "Expected format: 'Hex(5)HexNAc(2)' with monosaccharide names followed by counts in parentheses."
     ))
   }
+  .warn_lossy_neuac_linkage(parse_result)
   if (length(compositions) == 0) {
     return(glycan_composition())
   }
@@ -296,13 +322,18 @@ vec_ptype2.glyrepr_composition.logical <- function(x, y, ...) {
 vec_cast.glyrepr_composition.logical <- function(x, to, ...) {
   # Cast each logical element to NA composition or error
   # TRUE and FALSE are invalid (not NA), only NA is valid
-  result <- purrr::map(x, ~ {
-    if (is.na(.x)) {
-      NULL  # NA becomes NULL (NA composition)
-    } else {
-      cli::cli_abort("Cannot cast non-NA logical value to glyrepr_composition.")
+  result <- purrr::map(
+    x,
+    ~ {
+      if (is.na(.x)) {
+        NULL # NA becomes NULL (NA composition)
+      } else {
+        cli::cli_abort(
+          "Cannot cast non-NA logical value to glyrepr_composition."
+        )
+      }
     }
-  })
+  )
   new_glycan_composition(result)
 }
 
@@ -329,7 +360,10 @@ vec_restore.glyrepr_composition <- function(x, to, ...) {
     return(new_glycan_composition(data))
   }
 
-  monos_list <- purrr::map(non_na_data, ~ names(.x)[!names(.x) %in% available_substituents()])
+  monos_list <- purrr::map(
+    non_na_data,
+    ~ names(.x)[!names(.x) %in% available_substituents()]
+  )
   mono_types <- purrr::map_chr(monos_list, get_mono_type_impl)
 
   if (length(unique(mono_types)) > 1) {
@@ -357,7 +391,12 @@ is.na.glyrepr_composition <- function(x, ...) {
 }
 
 #' @export
-obj_print_data.glyrepr_composition <- function(x, ..., max_n = 10, colored = TRUE) {
+obj_print_data.glyrepr_composition <- function(
+  x,
+  ...,
+  max_n = 10,
+  colored = TRUE
+) {
   if (length(x) == 0) {
     return()
   }
@@ -367,7 +406,11 @@ obj_print_data.glyrepr_composition <- function(x, ..., max_n = 10, colored = TRU
 
   # Only format the compositions that need to be shown to improve performance
   indices_to_show <- seq_len(n_show)
-  formatted <- format_glycan_composition_subset(x, indices_to_show, colored = colored)
+  formatted <- format_glycan_composition_subset(
+    x,
+    indices_to_show,
+    colored = colored
+  )
 
   # Print each composition on its own line with indexing, up to max_n
   for (i in seq_len(n_show)) {
@@ -399,7 +442,11 @@ pillar_shaft.glyrepr_composition <- function(x, ...) {
 #' @noRd
 new_glycan_composition <- function(x = list()) {
   # Use vctrs::list_of instead of new_list_of
-  x <- vctrs::new_list_of(x, .ptype = integer(), class = "glyrepr_composition_list")
+  x <- vctrs::new_list_of(
+    x,
+    .ptype = integer(),
+    class = "glyrepr_composition_list"
+  )
   vctrs::new_rcrd(list(data = x), class = "glyrepr_composition")
 }
 
@@ -445,7 +492,9 @@ new_glycan_composition <- function(x = list()) {
   }
 
   # 4. Known monosaccharide check (skip NA elements)
-  if (!purrr::every(x_valid, ~ all(is_known_composition_component(names(.x))))) {
+  if (
+    !purrr::every(x_valid, ~ all(is_known_composition_component(names(.x))))
+  ) {
     cli::cli_abort(c(
       "Must have only known monosaccharides",
       "i" = "Call {.fun available_monosaccharides} to see all known monosaccharides."
@@ -478,12 +527,14 @@ new_glycan_composition <- function(x = list()) {
 #' @returns A character vector of monosaccharide types.
 #' @noRd
 .get_comp_mono_types <- function(x) {
-  x <- purrr::map(x, ~ .x[!names(.x) %in% available_substituents()])  # remove all substituents
+  x <- purrr::map(x, ~ .x[!names(.x) %in% available_substituents()]) # remove all substituents
 
   # After removing substituents, each composition must contain at least one monosaccharide.
   # Otherwise, get_mono_type_impl() would be called with an empty vector and fail.
   if (!purrr::every(x, ~ length(.x) > 0)) {
-    cli::cli_abort("Each composition must contain at least one monosaccharide (non-substituent residue).")
+    cli::cli_abort(
+      "Each composition must contain at least one monosaccharide (non-substituent residue)."
+    )
   }
   purrr::map_chr(x, ~ get_mono_type_impl(names(.x)))
 }
@@ -528,7 +579,13 @@ parse_single_composition <- function(char) {
     result <- tryCatch(
       {
         composition <- parser(char)
-        list(composition = composition, valid = TRUE)
+        lossy_neuac_linkage <- isTRUE(attr(composition, "lossy_neuac_linkage"))
+        attr(composition, "lossy_neuac_linkage") <- NULL
+        list(
+          composition = composition,
+          valid = TRUE,
+          lossy_neuac_linkage = lossy_neuac_linkage
+        )
       },
       error = function(e) NULL
     )
@@ -539,6 +596,20 @@ parse_single_composition <- function(char) {
 
   # All parsers failed
   list(composition = NULL, valid = FALSE)
+}
+
+#' Warn when simple NeuAc linkage codes are converted to composition counts
+#' @param parse_result A list of per-element results returned by
+#'   `parse_single_composition()`.
+#' @returns Nothing. Called for its warning side effect.
+#' @noRd
+.warn_lossy_neuac_linkage <- function(parse_result) {
+  if (purrr::some(parse_result, ~ isTRUE(.x$lossy_neuac_linkage))) {
+    cli::cli_warn(c(
+      "Simple composition codes {.val E} and/or {.val L} are parsed as {.val NeuAc}.",
+      "i" = "Linkage-specific Neu5Ac information is discarded in glycan compositions."
+    ))
+  }
 }
 
 .parse_byonic_comp <- function(x) {
@@ -560,8 +631,8 @@ parse_single_composition <- function(char) {
   parsed_matches <- purrr::map(matches, function(match) {
     match_result <- stringr::str_match(match, pattern)
     list(
-      name = match_result[1, 2],  # First capture group
-      count = as.integer(match_result[1, 3])  # Second capture group
+      name = match_result[1, 2], # First capture group
+      count = as.integer(match_result[1, 3]) # Second capture group
     )
   })
 
@@ -577,7 +648,7 @@ parse_single_composition <- function(char) {
 
 .parse_simple_comp <- function(x) {
   # "S" and "A" are both NeuAc, "G" is NeuGc
-  mono_pattern <- "([HNFSAG])(\\d+)"
+  mono_pattern <- "([HNFSAGEL])(\\d+)"
   matches <- stringr::str_extract_all(x, mono_pattern, simplify = FALSE)[[1]]
 
   # Check if no monos were matched
@@ -594,18 +665,22 @@ parse_single_composition <- function(char) {
   parsed_matches <- purrr::map(matches, function(match) {
     match_result <- stringr::str_match(match, mono_pattern)
     list(
-      name = match_result[1, 2],  # First capture group
-      count = as.integer(match_result[1, 3])  # Second capture group
+      name = match_result[1, 2], # First capture group
+      count = as.integer(match_result[1, 3]) # Second capture group
     )
   })
 
   mono_names <- purrr::map_chr(parsed_matches, "name")
-  mono_names <- dplyr::recode_values(mono_names,
+  lossy_neuac_linkage <- any(mono_names %in% c("E", "L"))
+  mono_names <- dplyr::recode_values(
+    mono_names,
     "H" ~ "Hex",
     "N" ~ "HexNAc",
     "F" ~ "dHex",
     "S" ~ "NeuAc",
     "A" ~ "NeuAc",
+    "E" ~ "NeuAc",
+    "L" ~ "NeuAc",
     "G" ~ "NeuGc"
   )
   mono_counts <- purrr::map_int(parsed_matches, "count")
@@ -613,6 +688,7 @@ parse_single_composition <- function(char) {
   # Create named vector
   comp <- mono_counts
   names(comp) <- mono_names
+  attr(comp, "lossy_neuac_linkage") <- lossy_neuac_linkage
   comp
 }
 
@@ -634,6 +710,24 @@ parse_single_composition <- function(char) {
   sub_orders <- available_substituents()
   orders <- c(mono_orders, sub_orders)
   components[order(match(names(components), orders))]
+}
+
+#' Aggregate duplicated composition components
+#'
+#' Components with the same name are summed while preserving the first occurrence
+#' of each component name. The final display order is handled separately by
+#' `.reorder_composition_components()`.
+#'
+#' @param components A named integer vector of composition components.
+#' @returns A named integer vector with unique component names.
+#' @noRd
+.aggregate_composition_components <- function(components) {
+  component_names <- unique(names(components))
+  groups <- factor(names(components), levels = component_names)
+  aggregated <- tapply(components, groups, sum)
+  aggregated <- as.integer(aggregated)
+  names(aggregated) <- component_names
+  aggregated
 }
 
 # Helper function to format a subset of compositions

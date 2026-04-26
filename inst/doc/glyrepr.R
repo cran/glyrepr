@@ -8,111 +8,178 @@ knitr::opts_chunk$set(
 library(glyrepr)
 
 ## -----------------------------------------------------------------------------
-# Just tell R what you have
-glycan_composition(c(Man = 5, GlcNAc = 2), c(Gal = 1, GalNAc = 1))
+comps <- glycan_composition(
+  c(Man = 5, GlcNAc = 2),
+  c(Man = 3, Gal = 2, GlcNAc = 4),
+  c(Man = 3, Gal = 2, GlcNAc = 4, Neu5Ac = 1, Fuc = 1)
+)
+comps
 
 ## -----------------------------------------------------------------------------
-# Perfect when you're processing data from files or databases
-comp_list <- list(c(Man = 5, GlcNAc = 2), c(Gal = 1, GalNAc = 1))
+as_glycan_composition(list(
+  c(Man = 5, GlcNAc = 2),
+  c(Man = 3, Gal = 2, GlcNAc = 4),
+  c(Man = 3, Gal = 2, GlcNAc = 4, Neu5Ac = 1, Fuc = 1)
+))
+
+## -----------------------------------------------------------------------------
+comp_list <- list(
+  c(Man = 5, GlcNAc = 2),
+  c(Man = 3, Gal = 2, GlcNAc = 4),
+  c(Man = 3, Gal = 2, GlcNAc = 4, Neu5Ac = 1, Fuc = 1)
+)
 as_glycan_composition(comp_list)
 
 ## -----------------------------------------------------------------------------
-# Copy-paste from your mass spec software? No problem!
-as_glycan_composition(c("Hex(5)HexNAc(2)", "H1N1"))
+as_glycan_composition(c("H5N2", "Hex(3)HexNAc(2)"))
 
 ## -----------------------------------------------------------------------------
-comp <- glycan_composition(c(Gal = 1, Man = 1, GalNAc = 1))
-
-# How many galactose residues?
-count_mono(comp, "Gal")
-
-# How many hexose residues? (This includes Gal and Man!)
-count_mono(comp, "Hex")
+strucs <- c(o_glycan_core_1(), o_glycan_core_2())
+as_glycan_composition(strucs)
 
 ## -----------------------------------------------------------------------------
-iupacs <- c(
-  "Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-",  # The famous N-glycan core
-  "Gal(b1-3)GalNAc(a1-",                                  # O-glycan core 1
-  "Gal(b1-3)[GlcNAc(b1-6)]GalNAc(a1-",                    # O-glycan core 2
-  "Man(a1-3)[Man(a1-6)]Man(a1-3)[Man(a1-6)]Man(a1-",      # A branched mannose tree
-  "GlcNAc6Ac(b1-4)Glc3Me(a1-"                             # With some decorations
+# This raises an error because the monosaccharide names are mixed.
+try(as_glycan_composition(c("Hex(5)HexNAc(2)", "Man(5)GlcNAc(2)")), silent = TRUE)
+
+## -----------------------------------------------------------------------------
+comps
+
+## -----------------------------------------------------------------------------
+count_mono(comps, "Man")
+
+## -----------------------------------------------------------------------------
+count_mono(comps, "Neu5Ac")
+
+## -----------------------------------------------------------------------------
+count_mono(comps, "Hex")
+
+## -----------------------------------------------------------------------------
+count_mono(comps)
+
+## -----------------------------------------------------------------------------
+c(comps, comps)
+
+## -----------------------------------------------------------------------------
+comps[1:2]
+
+## -----------------------------------------------------------------------------
+comps[integer()]
+
+## -----------------------------------------------------------------------------
+length(comps)
+
+## -----------------------------------------------------------------------------
+dup_comps <- c(comps, comps)
+dup_comps
+
+## -----------------------------------------------------------------------------
+unique(dup_comps)
+
+## -----------------------------------------------------------------------------
+rep(comps, times = 2)
+
+## -----------------------------------------------------------------------------
+sort(comps)
+
+## -----------------------------------------------------------------------------
+sort(comps, decreasing = TRUE)
+
+## -----------------------------------------------------------------------------
+library(tibble)
+
+tb <- tibble(
+  id = c("glycan1", "glycan2", "glycan3"),
+  composition = comps
 )
-
-struc <- as_glycan_structure(iupacs)
-struc
+tb
 
 ## -----------------------------------------------------------------------------
-# Create a big dataset with lots of repetition
-large_struc <- rep(struc, 1000)  # 5,000 structures total
-large_struc
+library(dplyr)
+
+tb |>
+  mutate(n_sia = count_mono(composition, "Neu5Ac")) |>
+  filter(n_sia > 0)
 
 ## -----------------------------------------------------------------------------
-library(tictoc)
-
-tic("Converting 5 structures")
-result_small <- convert_to_generic(struc)
-toc()
-
-tic("Converting 5,000 structures")
-result_large <- convert_to_generic(large_struc)
-toc()
+comps_with_na <- glycan_composition(c(Man = 5, GlcNAc = 2), NA)
+comps_with_na
 
 ## -----------------------------------------------------------------------------
-# Concrete structures (various linkage detail levels)
-concrete_glycans <- as_glycan_structure(c(
+count_mono(comps_with_na, "Man")
+
+## -----------------------------------------------------------------------------
+strucs <- as_glycan_structure(c(
   "Gal(b1-3)GalNAc(a1-",
+  "Gal(b1-3)[GlcNAc(b1-6)]GalNAc(a1-"
+))
+strucs
+
+## -----------------------------------------------------------------------------
+get_structure_graphs(strucs)
+
+## -----------------------------------------------------------------------------
+count_mono(strucs, "Gal")
+
+## -----------------------------------------------------------------------------
+# This function works element-wise
+has_linkages(strucs)
+
+## -----------------------------------------------------------------------------
+get_mono_type(strucs)
+
+## -----------------------------------------------------------------------------
+get_structure_level(strucs)
+
+## -----------------------------------------------------------------------------
+as_glycan_structure(c(
+  "Gal(b1-3)GalNAc(a1-",
+  "Gal(b1-3)[GlcNAc(b1-6)]GalNAc(a1-"
+)) |> get_structure_level()
+
+## -----------------------------------------------------------------------------
+as_glycan_structure(c(
   "Gal(b1-?)GalNAc(a1-",
-  "Gal(??-?)GalNAc(??-"
-))
-get_structure_level(concrete_glycans)
+  "Gal(b1-?)[GlcNAc(b1-6)]GalNAc(a1-"
+)) |> get_structure_level()
 
-# Generic structures
-generic_glycans <- as_glycan_structure(c(
+## -----------------------------------------------------------------------------
+as_glycan_structure(c(
+  "Gal(??-?)GalNAc(??-",
+  "Gal(??-?)[GlcNAc(??-?)]GalNAc(??-"
+)) |> get_structure_level()
+
+## -----------------------------------------------------------------------------
+as_glycan_structure(c(
   "Hex(??-?)HexNAc(??-",
-  "Hex(b1-3)HexNAc(a1-"
+  "Hex(??-?)[HexNAc(??-?)]HexNAc(??-"
+)) |> get_structure_level()
+
+## -----------------------------------------------------------------------------
+as_glycan_structure(c(
+  "Hex(a1-3)HexNAc(a1-",
+  "Hex(a1-3)[HexNAc(b1-6)]HexNAc(a1-"
+)) |> get_structure_level()
+
+## -----------------------------------------------------------------------------
+strucs
+
+## -----------------------------------------------------------------------------
+reduce_structure_level(strucs, to_level = "basic")
+
+## -----------------------------------------------------------------------------
+remove_linkages(strucs)  # same as reduce_structure_level(strucs, to_level = "topological")
+
+## -----------------------------------------------------------------------------
+strucs_with_subs <- as_glycan_structure(c(
+  "Gal6S(b1-3)GalNAc(a1-",
+  "Gal6S(b1-3)[GlcNAc(b1-6)]GalNAc(a1-"
 ))
-get_structure_level(generic_glycans)
+remove_substituents(strucs_with_subs)
 
 ## -----------------------------------------------------------------------------
-remove_linkages(struc)
-
-## -----------------------------------------------------------------------------
-# Let's look at our decorated structure first
-struc[5]
-
-# Now remove the decorations (6Ac and 3Me)
-remove_substituents(struc[5])
-
-## -----------------------------------------------------------------------------
-convert_to_generic(struc)
-
-## -----------------------------------------------------------------------------
-reduce_structure_level(struc, to_level = "basic")
-# Same as remove_linkages() then convert_to_generic()
-
-## -----------------------------------------------------------------------------
-comp <- as_glycan_composition(struc)
-comp
-
-## -----------------------------------------------------------------------------
-# Get the original string representations
-as.character(struc)
-as.character(comp)
-
-## -----------------------------------------------------------------------------
-suppressPackageStartupMessages(library(tibble))
-suppressPackageStartupMessages(library(dplyr))
-
-df <- tibble(
-  id = seq_along(struc),
-  structures = struc,
-  names = c("N-glycan core", "Core 1", "Core 2", "Branched Man", "Decorated")
+strings <- c(
+  glycan1 = "Gal(b1-3)GalNAc(a1-",
+  glycan2 = "Gal(b1-3)[GlcNAc(b1-6)]GalNAc(a1-"
 )
-
-df %>% 
-  mutate(n_man = count_mono(structures, "Man")) %>%
-  filter(n_man > 1)
-
-## -----------------------------------------------------------------------------
-sessionInfo()
+as_glycan_structure(strings)
 

@@ -7,20 +7,10 @@
 #' structure comparison studies.
 #'
 #' @details
-#' # Core Features
-#'
-#' - **Efficient Storage**: Uses hash values of IUPAC codes for deduplication, 
-#'   avoiding redundant storage of identical glycan structures
-#' - **Graph Model Representation**: Each glycan structure is represented as a directed 
-#'   graph where nodes are monosaccharides and edges are glycosidic linkages
-#' - **Vectorized Operations**: Supports R's vectorized operations for batch 
-#'   processing of glycan data
-#' - **Type Safety**: Built on the vctrs package, providing type-safe operations
-#'
 #' # Data Structure Overview
 #'
-#' A glycan structure vector is a vctrs record with an additional S3 class 
-#' `glyrepr_structure`. Therefore, `sloop::s3_class()` returns the class hierarchy 
+#' A glycan structure vector is a vctrs record with an additional S3 class
+#' `glyrepr_structure`. Therefore, `sloop::s3_class()` returns the class hierarchy
 #' `c("glyrepr_structure", "vctrs_rcrd")`.
 #'
 #' Each glycan structure must satisfy the following constraints:
@@ -37,9 +27,9 @@
 #'   - Cannot mix generic and concrete names
 #'   - NA values are not allowed
 #' - `sub`: Substituent information
-#'   - Single substituent format: "xY" (x = position, Y = substituent name), 
+#'   - Single substituent format: "xY" (x = position, Y = substituent name),
 #'     e.g., "2Ac", "3S"
-#'   - Multiple substituents separated by commas and ordered by position, 
+#'   - Multiple substituents separated by commas and ordered by position,
 #'     e.g., "3Me,4Ac", "2S,6P"
 #'   - No substituents represented by empty string ""
 #'
@@ -59,17 +49,6 @@
 #' the vertices are "Man", "Man", "Man", "GlcNAc", "GlcNAc",
 #' and the linkages are "a1-3", "a1-6", "b1-4", "b1-4".
 #'
-#' # Use Cases
-#'
-#' - **Glycoproteomics Analysis**: Processing glycan structure information from 
-#'   mass spectrometry data
-#' - **Glycomics Research**: Comparing glycan expression profiles across different 
-#'   samples or conditions
-#' - **Structure-Function Analysis**: Studying relationships between glycan 
-#'   structures and biological functions
-#' - **Database Queries**: Performing structure matching and searches in glycan
-#'   databases
-#'
 #' # NA Support
 #'
 #' Glycan structure vectors support NA values for representing missing or
@@ -81,7 +60,22 @@
 #' - `smap` functions skip NA elements gracefully
 #' - `is.na()` returns `TRUE` for NA elements
 #'
-#' @param ... igraph graph objects to be converted to glycan structures, or existing 
+#' # Naming Support
+#'
+#' Glycan structure vectors can have names, which are preserved during operations.
+#' This is particularly useful when working with the `glymotif` package.
+#'
+#' # As characters
+#'
+#' One side-effect of the current implementation is that you can treat a glycan structure vector
+#' as a pure character vector of IUPAC-condensed strings.
+#' In fact, `is.character()` returns `TRUE` for a glycan structure vector,
+#' and all `stringr` functions work directly on the vector.
+#'
+#' However, we still recommend using `as.character()` to explicitly convert to character when needed,
+#' to avoid confusion and ensure that the intended behavior is clear.
+#'
+#' @param ... igraph graph objects to be converted to glycan structures, or existing
 #'   glycan structure vectors. Supports mixed input of multiple objects.
 #' @param x An object to check or convert.
 #'
@@ -137,7 +131,7 @@ glycan_structure <- function(...) {
       na_positions <- c(na_positions, TRUE)
     } else if (inherits(arg, "igraph")) {
       graphs <- c(graphs, list(arg))
-      iupacs <- c(iupacs, NA_character_)  # placeholder
+      iupacs <- c(iupacs, NA_character_) # placeholder
       na_positions <- c(na_positions, FALSE)
     } else {
       cli::cli_abort("All arguments must be igraph objects or NA values.")
@@ -180,7 +174,10 @@ glycan_structure <- function(...) {
   validate_glycan_structure_vector(reordered_graphs)
 
   # Use IUPAC codes directly as data for the glycan_structure vctrs vector
-  processed_iupacs <- purrr::map_chr(reordered_graphs, .structure_to_iupac_single)
+  processed_iupacs <- purrr::map_chr(
+    reordered_graphs,
+    .structure_to_iupac_single
+  )
 
   # Create a unique list based on uniqueness of IUPAC codes for structures storage
   unique_indices <- which(!duplicated(processed_iupacs))
@@ -191,8 +188,8 @@ glycan_structure <- function(...) {
   # Build final result - replace placeholders with actual IUPACs
   # Map reordered positions back to original positions
   for (i in seq_along(reorder_indices)) {
-    orig_pos <- reorder_indices[i]  # Original position in valid_graphs
-    final_pos <- valid_idx[orig_pos]  # Final position in result vector
+    orig_pos <- reorder_indices[i] # Original position in valid_graphs
+    final_pos <- valid_idx[orig_pos] # Final position in result vector
     iupac <- processed_iupacs[i]
     iupacs[final_pos] <- iupac
   }
@@ -223,19 +220,27 @@ validate_single_glycan_structure <- function(glycan) {
   # Check if no NA in vertex attribute "mono"
   mono_names <- igraph::vertex_attr(glycan, "mono")
   if (any(is.na(mono_names))) {
-    cli::cli_abort("Glycan structure must have no NA in vertex attribute 'mono'.")
+    cli::cli_abort(
+      "Glycan structure must have no NA in vertex attribute 'mono'."
+    )
   }
 
   # Check if all monosaccharides are known
   if (!all(is_known_mono(mono_names))) {
-    unknown_monos <- unique(igraph::V(glycan)$mono[!is_known_mono(igraph::V(glycan)$mono)])
-    msg <- glue::glue("Unknown monosaccharide: {stringr::str_c(unknown_monos, collapse = ', ')}")
+    unknown_monos <- unique(igraph::V(glycan)$mono[
+      !is_known_mono(igraph::V(glycan)$mono)
+    ])
+    msg <- glue::glue(
+      "Unknown monosaccharide: {stringr::str_c(unknown_monos, collapse = ', ')}"
+    )
     cli::cli_abort(msg, monos = unknown_monos)
   }
 
   # Check if mixed use of generic and concrete monosaccharides
   if (mix_generic_concrete(mono_names)) {
-    cli::cli_abort("Monosaccharides must be either all generic or all concrete.")
+    cli::cli_abort(
+      "Monosaccharides must be either all generic or all concrete."
+    )
   }
 
   # Check if graph has a vertex attribute "sub"
@@ -247,13 +252,17 @@ validate_single_glycan_structure <- function(glycan) {
   # Check if no NA in vertex attribute "sub"
   subs <- igraph::vertex_attr(glycan, "sub")
   if (any(is.na(subs))) {
-    cli::cli_abort("Glycan structure must have no NA in vertex attribute 'sub'.")
+    cli::cli_abort(
+      "Glycan structure must have no NA in vertex attribute 'sub'."
+    )
   }
 
   # Check if all substituents are valid
   if (!all(valid_substituent(subs))) {
     invalid_subs <- unique(subs[!valid_substituent(subs)])
-    msg <- glue::glue("Unknown substituent: {stringr::str_c(invalid_subs, collapse = ', ')}")
+    msg <- glue::glue(
+      "Unknown substituent: {stringr::str_c(invalid_subs, collapse = ', ')}"
+    )
     cli::cli_abort(msg, subs = invalid_subs)
   }
 
@@ -265,13 +274,17 @@ validate_single_glycan_structure <- function(glycan) {
   # Check if no NA in edge attribute "linkage"
   linkages <- igraph::edge_attr(glycan, "linkage")
   if (any(is.na(linkages))) {
-    cli::cli_abort("Glycan structure must have no NA in edge attribute 'linkage'.")
+    cli::cli_abort(
+      "Glycan structure must have no NA in edge attribute 'linkage'."
+    )
   }
 
   # Check if all linkages are valid
   if (!all(valid_linkages(linkages))) {
     invalid_linkages <- unique(linkages[!valid_linkages(linkages)])
-    msg <- glue::glue("Invalid linkage: {stringr::str_c(invalid_linkages, collapse = ', ')}")
+    msg <- glue::glue(
+      "Invalid linkage: {stringr::str_c(invalid_linkages, collapse = ', ')}"
+    )
     cli::cli_abort(msg, linkages = invalid_linkages)
   }
 
@@ -352,6 +365,36 @@ new_glycan_structure <- function(iupac = character(), graphs = list()) {
   vctrs::new_vctr(iupac, graphs = graphs, class = "glyrepr_structure")
 }
 
+#' Create a missing glycan structure vector
+#'
+#' @param n Number of missing elements.
+#' @returns A `glyrepr_structure` vector containing only missing values.
+#' @noRd
+new_na_glycan_structure <- function(n) {
+  new_glycan_structure(rep(NA_character_, n), list())
+}
+
+#' Get the missing-value mask for a glycan structure vector
+#'
+#' @param x A `glyrepr_structure` vector.
+#' @returns A logical vector.
+#' @noRd
+structure_na_mask <- function(x) {
+  is.na(vctrs::vec_data(x))
+}
+
+#' Keep only graphs used by non-missing structure codes
+#'
+#' @param iupacs Character vector of structure codes.
+#' @param graphs Named list of structure graphs.
+#' @returns A named list of graphs.
+#' @noRd
+filter_used_structure_graphs <- function(iupacs, graphs) {
+  used_codes <- unique(iupacs[!is.na(iupacs)])
+  used_graphs <- graphs[used_codes]
+  used_graphs[!vapply(used_graphs, is.null, logical(1))]
+}
+
 ensure_name_vertex_attr <- function(glycan) {
   if (!("name" %in% igraph::vertex_attr_names(glycan))) {
     names <- as.character(seq_len(igraph::vcount(glycan)))
@@ -428,11 +471,21 @@ format_glycan_structure_subset <- function(x, indices, colored = TRUE) {
 
 #' @export
 obj_print_footer.glyrepr_structure <- function(x, ...) {
-  cat("# Unique structures: ", format(length(attr(x, "graphs"))), "\n", sep = "")
+  cat(
+    "# Unique structures: ",
+    format(length(attr(x, "graphs"))),
+    "\n",
+    sep = ""
+  )
 }
 
 #' @export
-obj_print_data.glyrepr_structure <- function(x, ..., max_n = 10, colored = TRUE) {
+obj_print_data.glyrepr_structure <- function(
+  x,
+  ...,
+  max_n = 10,
+  colored = TRUE
+) {
   if (length(x) == 0) {
     return()
   }
@@ -442,7 +495,11 @@ obj_print_data.glyrepr_structure <- function(x, ..., max_n = 10, colored = TRUE)
 
   # Only format the structures that need to be shown to improve performance
   indices_to_show <- seq_len(n_show)
-  formatted <- format_glycan_structure_subset(x, indices_to_show, colored = colored)
+  formatted <- format_glycan_structure_subset(
+    x,
+    indices_to_show,
+    colored = colored
+  )
 
   # Check if names are present
   nms <- names(x)
@@ -505,8 +562,11 @@ vec_ptype2.glyrepr_structure.glyrepr_structure <- function(x, y, ...) {
     unique_types_x <- unique(mono_types_x)
     unique_types_y <- unique(mono_types_y)
 
-    if (length(unique_types_x) > 0 && length(unique_types_y) > 0 &&
-        unique_types_x[[1]] != unique_types_y[[1]]) {
+    if (
+      length(unique_types_x) > 0 &&
+        length(unique_types_y) > 0 &&
+        unique_types_x[[1]] != unique_types_y[[1]]
+    ) {
       concrete_count_x <- sum(mono_types_x == "concrete")
       generic_count_x <- sum(mono_types_x == "generic")
       concrete_count_y <- sum(mono_types_y == "concrete")
@@ -563,14 +623,11 @@ vec_cast.glyrepr_structure.character <- function(x, to, ...) {
   # Handle NA values
   na_mask <- is.na(x)
 
-  if (length(x) == 1 && na_mask[1]) {
-    # Single NA should error for backward compatibility
-    cli::cli_abort("Cannot parse empty or NA IUPAC-condensed string.")
-  }
-
   if (all(na_mask)) {
     # All NA - return vector of NAs with empty graphs
-    return(new_glycan_structure(rep(NA_character_, length(x)), list()))
+    result <- new_na_glycan_structure(length(x))
+    names(result) <- names(x)
+    return(result)
   }
 
   if (any(na_mask)) {
@@ -647,10 +704,7 @@ vec_restore.glyrepr_structure <- function(x, to, ...) {
 
   # Filter graphs to only include those used in the subset
   # Use unique iupacs to handle duplicates correctly
-  unique_iupacs <- unique(iupacs)
-  used_graphs <- graphs[unique_iupacs]
-  # Remove any NULL elements (can happen with empty list indexing)
-  used_graphs <- used_graphs[!vapply(used_graphs, is.null, logical(1))]
+  used_graphs <- filter_used_structure_graphs(iupacs, graphs)
 
   out <- vctrs::new_vctr(x, graphs = used_graphs, class = "glyrepr_structure")
   out
@@ -669,9 +723,7 @@ vec_restore.glyrepr_structure <- function(x, to, ...) {
     return(out)
   }
   if (length(graphs) > 0) {
-    unique_iupacs <- unique(iupacs)
-    used_graphs <- graphs[unique_iupacs]
-    used_graphs <- used_graphs[!vapply(used_graphs, is.null, logical(1))]
+    used_graphs <- filter_used_structure_graphs(iupacs, graphs)
     attr(out, "graphs") <- used_graphs
   }
   out

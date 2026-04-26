@@ -52,5 +52,5 @@ graphs <- get_structure_graphs(glycans)  # Extract graphs first
 map_int(graphs, ~ igraph::vcount(.x))    # Then analyze
 
 ## -----------------------------------------------------------------------------
-smap_int(glycans, ~ igraph::vcount(.x))  # Direct analysis - no intermediate step!
+smap_int(glycans, ~ igraph::vcount(.x))  # Direct analysis, no intermediate step.
 

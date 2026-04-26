@@ -19,7 +19,7 @@ iupacs <- c(
 
 struc <- as_glycan_structure(iupacs)
 
-# Now let's create a realistic dataset with lots of repetition
+# Now create a realistic dataset with lots of repetition.
 large_struc <- rep(struc, 1000)  # 5,000 total structures
 large_struc
 
@@ -35,14 +35,13 @@ library(lobstr)
 obj_sizes(struc, large_struc)
 
 ## -----------------------------------------------------------------------------
-# This won't work and will throw an error
+# This will not work and will raise an error.
 tryCatch(
   purrr::map_int(large_struc, ~ igraph::vcount(.x)),
-  error = function(e) cat("💥 Error:", rlang::cnd_message(e))
+  error = function(e) cat("Error:", rlang::cnd_message(e))
 )
 
 ## -----------------------------------------------------------------------------
-# This works beautifully!
 vertex_counts <- smap_int(large_struc, ~ igraph::vcount(.x))
 vertex_counts[1:10]
 
@@ -56,7 +55,7 @@ sum(has_many_vertices)
 
 ## -----------------------------------------------------------------------------
 degree_sequences <- smap(large_struc, ~ igraph::degree(.x))
-degree_sequences[1:3]  # Show first 3
+degree_sequences[1:3]
 
 ## -----------------------------------------------------------------------------
 ssome(large_struc, ~ any(igraph::degree(.x) == 0))
@@ -109,7 +108,7 @@ clustering_coeffs <- smap_dbl(large_struc, ~ igraph::transitivity(.x, type = "gl
 summary(clustering_coeffs)
 
 ## -----------------------------------------------------------------------------
-# Create a comprehensive analysis
+# Create a compact structure summary.
 structure_analysis <- smap(large_struc, function(g) {
   list(
     vertices = igraph::vcount(g),
@@ -137,7 +136,7 @@ detect_branching <- function(g) {
   any(degrees >= 3)
 }
 
-# Apply to large dataset - blazingly fast due to unique structure optimization
+# Apply to a large dataset using unique structure optimization.
 has_branching <- smap_lgl(large_struc, detect_branching)
 cat("Structures with branching:", sum(has_branching), "out of", length(large_struc), "\n")
 

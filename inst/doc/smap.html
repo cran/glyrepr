@@ -12,7 +12,7 @@
 
 
 
-<title>Power User Guide: Efficient Glycan Manipulation</title>
+<title>Efficient Glycan Manipulation with smap</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -337,26 +337,26 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 
 
 
-<h1 class="title toc-ignore">Power User Guide: Efficient Glycan Manipulation</h1>
+<h1 class="title toc-ignore">Efficient Glycan Manipulation with smap</h1>
 
 
 
-<div id="welcome-to-the-advanced-zone" class="section level2">
-<h2>Welcome to the Advanced Zone! 🚀</h2>
-<p>Ready to unlock the <strong>full potential</strong> of <code>glyrepr</code>? This vignette is for those who want to peek under the hood and master the art of efficient glycan computation. If you’re writing custom functions for glycan analysis or building the next great glycomics tool, you’re in the right place!</p>
-<p><strong>Fair warning</strong>: This guide assumes you’re comfortable with R programming and graph theory concepts. If you’re just getting started, check out our “Getting Started with glyrepr” vignette first.</p>
+<div id="overview" class="section level2">
+<h2>Overview</h2>
+<p>This vignette introduces the <code>smap</code> family of functions. These functions are useful when you want to apply custom <code>igraph</code>-based operations to glycan structure vectors.</p>
+<p>This guide assumes you are comfortable with R programming and have some familiarity with graph concepts. If you are just getting started, read the “Getting Started with glyrepr” vignette first.</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(glyrepr)</span></code></pre></div>
 </div>
-<div id="the-secret-superpower-unique-structure-optimization" class="section level2">
-<h2>The Secret Superpower: Unique Structure Optimization</h2>
-<p>Before we dive into the <code>smap</code> functions, let’s understand why they exist and why they’re <strong>game-changing</strong> for glycan analysis.</p>
-<div id="the-problem-glycan-computation-is-expensive" class="section level3">
-<h3>The Problem: Glycan Computation is Expensive 💸</h3>
-<p>Working with glycan structures means working with graphs, and graph operations are computationally expensive. When you’re analyzing thousands of glycans from a large-scale study, this becomes a real bottleneck.</p>
+<div id="unique-structure-optimization" class="section level2">
+<h2>Unique Structure Optimization</h2>
+<p>Before using <code>smap</code>, it helps to understand why these functions exist.</p>
+<div id="the-problem" class="section level3">
+<h3>The Problem</h3>
+<p>Working with glycan structures means working with graphs, and graph operations are computationally expensive. When you are analyzing thousands of glycans from a large-scale study, this becomes a real bottleneck.</p>
 </div>
-<div id="the-solution-work-smart-not-hard" class="section level3">
-<h3>The Solution: Work Smart, Not Hard 🧠</h3>
-<p><code>glyrepr</code> implements a clever optimization called <strong>unique structure storage</strong>. Instead of storing thousands of identical graphs, it stores only the unique ones and keeps track of which original positions they belong to.</p>
+<div id="the-solution" class="section level3">
+<h3>The Solution</h3>
+<p><code>glyrepr</code> implements an optimization called <strong>unique structure storage</strong>. Instead of storing thousands of identical graphs, it stores only the unique ones and keeps track of which original positions they belong to.</p>
 <p>Let’s see this in action:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Our test data: some common glycan structures</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>iupacs <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
@@ -369,7 +369,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>struc <span class="ot">&lt;-</span> <span class="fu">as_glycan_structure</span>(iupacs)</span>
 <span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="co"># Now let&#39;s create a realistic dataset with lots of repetition</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="co"># Now create a realistic dataset with lots of repetition.</span></span>
 <span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>large_struc <span class="ot">&lt;-</span> <span class="fu">rep</span>(struc, <span class="dv">1000</span>)  <span class="co"># 5,000 total structures</span></span>
 <span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>large_struc</span>
 <span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; &lt;glycan_structure[5000]&gt;</span></span>
@@ -385,8 +385,8 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [10] GlcNAc6Ac(b1-4)Glc3Me(a1-</span></span>
 <span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ... (4990 more not shown)</span></span>
 <span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # Unique structures: 5</span></span></code></pre></div>
-<p>Notice that magical “# Unique structures: 5”? That’s your performance booster right there!</p>
-<p>Let’s verify this optimization is real:</p>
+<p>Notice that the object reports only 5 unique structures. The vector has 5,000 elements, but only 5 unique graphs are stored internally.</p>
+<p>We can verify that directly:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Only 5 unique graphs are stored internally</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">length</span>(<span class="fu">attr</span>(large_struc, <span class="st">&quot;structures&quot;</span>))</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span>
@@ -395,40 +395,39 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">length</span>(large_struc)</span>
 <span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 5000</span></span></code></pre></div>
 </div>
-<div id="the-memory-savings-are-real" class="section level3">
-<h3>The Memory Savings Are Real</h3>
+<div id="memory-savings" class="section level3">
+<h3>Memory Savings</h3>
 <div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(lobstr)</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: 程序包&#39;lobstr&#39;是用R版本4.5.2 来建造的</span></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">obj_sizes</span>(struc, large_struc)</span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; * 13.78 kB</span></span>
 <span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; * 40.69 kB</span></span></code></pre></div>
-<p><strong>80 kB vs 15 MB?</strong> That’s a 200x memory efficiency! But the real magic happens with computation speed…</p>
+<p>The memory difference can be substantial. For repeated structures, the optimized representation can be much smaller than storing every graph independently.</p>
 </div>
 </div>
-<div id="enter-the-smap-universe" class="section level2">
-<h2>Enter the <code>smap</code> Universe 🌌</h2>
-<p>Now here’s the problem: if you try to use regular <code>lapply()</code> or <code>purrr::map()</code> functions on glycan structures, you’ll hit a wall:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># This won&#39;t work and will throw an error</span></span>
+<div id="the-smap-family" class="section level2">
+<h2>The <code>smap</code> Family</h2>
+<p>There is one important consequence of this internal representation: regular <code>lapply()</code> or <code>purrr::map()</code> functions do not operate directly on a glycan structure vector as if it were a list of graphs.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># This will not work and will raise an error.</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">tryCatch</span>(</span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  purrr<span class="sc">::</span><span class="fu">map_int</span>(large_struc, <span class="sc">~</span> igraph<span class="sc">::</span><span class="fu">vcount</span>(.x)),</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">error =</span> <span class="cf">function</span>(e) <span class="fu">cat</span>(<span class="st">&quot;💥 Error:&quot;</span>, rlang<span class="sc">::</span><span class="fu">cnd_message</span>(e))</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">error =</span> <span class="cf">function</span>(e) <span class="fu">cat</span>(<span class="st">&quot;Error:&quot;</span>, rlang<span class="sc">::</span><span class="fu">cnd_message</span>(e))</span>
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 💥 Error: ℹ In index: 1.</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Error: ℹ In index: 1.</span></span>
 <span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Caused by error in `ensure_igraph()`:</span></span>
 <span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ! Must provide a graph object (provided wrong object type).</span></span></code></pre></div>
 <p><strong>Why does this fail?</strong> Because <code>purrr</code> functions don’t understand the internal structure optimization of <code>glycan_structure</code> objects.</p>
-<div id="the-smap-family-to-the-rescue" class="section level3">
-<h3>The <code>smap</code> Family to the Rescue!</h3>
-<p>The <code>smap</code> functions (think “<strong>s</strong>tructure map”) are drop-in replacements for <code>purrr</code> functions that are <strong>glycan-aware</strong>. They understand the unique structure optimization and work directly with the underlying graph objects.</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># This works beautifully!</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>vertex_counts <span class="ot">&lt;-</span> <span class="fu">smap_int</span>(large_struc, <span class="sc">~</span> igraph<span class="sc">::</span><span class="fu">vcount</span>(.x))</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>vertex_counts[<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>]</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  [1] 5 2 3 5 2 5 2 3 5 2</span></span></code></pre></div>
-<p><strong>The “s” stands for “structure”</strong> — these functions operate on the underlying <code>igraph</code> objects that represent your glycan structures.</p>
+<div id="structure-aware-mapping" class="section level3">
+<h3>Structure-Aware Mapping</h3>
+<p>The <code>smap</code> functions are structure-aware alternatives to <code>purrr</code> mapping functions. They understand the unique structure optimization and work directly with the underlying graph objects.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>vertex_counts <span class="ot">&lt;-</span> <span class="fu">smap_int</span>(large_struc, <span class="sc">~</span> igraph<span class="sc">::</span><span class="fu">vcount</span>(.x))</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>vertex_counts[<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>]</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  [1] 5 2 3 5 2 5 2 3 5 2</span></span></code></pre></div>
+<p>The “s” stands for “structure”: these functions operate on the underlying <code>igraph</code> objects that represent glycan structures.</p>
 </div>
 </div>
-<div id="the-complete-smap-toolkit" class="section level2">
-<h2>The Complete <code>smap</code> Toolkit 🛠️</h2>
+<div id="the-smap-toolkit" class="section level2">
+<h2>The <code>smap</code> Toolkit</h2>
 <p>The <code>smap</code> family provides glycan-aware equivalents for virtually all <code>purrr</code> functions:</p>
 <table>
 <thead>
@@ -496,9 +495,9 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 </tr>
 </tbody>
 </table>
-<p><strong>Simple rule</strong>: Replace <code>map</code> with <code>smap</code>, <code>pmap</code> with <code>spmap</code>, and <code>imap</code> with <code>simap</code>. Everything else works exactly like <code>purrr</code>!</p>
-<div id="lets-put-them-to-work" class="section level3">
-<h3>Let’s Put Them to Work!</h3>
+<p>As a simple rule, replace <code>map</code> with <code>smap</code>, <code>pmap</code> with <code>spmap</code>, and <code>imap</code> with <code>simap</code>. The function signatures are designed to feel familiar if you already use <code>purrr</code>.</p>
+<div id="basic-examples" class="section level3">
+<h3>Basic Examples</h3>
 <p><strong>Count vertices in each structure:</strong></p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>vertex_counts <span class="ot">&lt;-</span> <span class="fu">smap_int</span>(large_struc, igraph<span class="sc">::</span>vcount)</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(vertex_counts)</span>
@@ -510,7 +509,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 2000</span></span></code></pre></div>
 <p><strong>Get the degree sequence of each structure:</strong></p>
 <div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>degree_sequences <span class="ot">&lt;-</span> <span class="fu">smap</span>(large_struc, <span class="sc">~</span> igraph<span class="sc">::</span><span class="fu">degree</span>(.x))</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>degree_sequences[<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>]  <span class="co"># Show first 3</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>degree_sequences[<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>]</span>
 <span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [[1]]</span></span>
 <span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 2 3 4 5 </span></span>
 <span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 1 3 2 1 </span></span>
@@ -545,12 +544,12 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>})</span>
 <span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>indexed_report</span>
 <span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot;#1: 5 vertices&quot; &quot;#2: 2 vertices&quot; &quot;#3: 3 vertices&quot;</span></span></code></pre></div>
-<p>⚠️ <strong>Performance Warning</strong>: <code>simap</code> functions don’t benefit from the unique structure optimization! Since each element has a different index, the combination of <code>(structure, index)</code> is always unique, breaking the deduplication that makes other <code>smap</code> functions fast. Use <code>simap</code> only when you truly need position information.</p>
+<p><strong>Performance note:</strong> <code>simap</code> functions do not benefit from the unique structure optimization. Since each element has a different index, the combination of <code>(structure, index)</code> is always unique, breaking the deduplication that makes other <code>smap</code> functions fast. Use <code>simap</code> only when you truly need position information.</p>
 </div>
 </div>
-<div id="performance-the-magic-of-deduplication" class="section level2">
-<h2>Performance: The Magic of Deduplication ⚡</h2>
-<p>The beauty of <code>smap</code> functions lies in automatic deduplication:</p>
+<div id="performance" class="section level2">
+<h2>Performance</h2>
+<p>The main performance benefit of <code>smap</code> functions comes from automatic deduplication:</p>
 <div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a large dataset with high redundancy</span></span>
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>huge_struc <span class="ot">&lt;-</span> <span class="fu">rep</span>(struc, <span class="dv">5000</span>)  <span class="co"># 25,000 structures, only 5 unique</span></span>
 <span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -574,15 +573,15 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a>all_graphs <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(huge_struc)  <span class="co"># Extracts all 25,000 graphs</span></span>
 <span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a>vertex_counts_naive <span class="ot">&lt;-</span> purrr<span class="sc">::</span><span class="fu">map_int</span>(all_graphs, igraph<span class="sc">::</span>vcount)</span>
 <span id="cb14-23"><a href="#cb14-23" aria-hidden="true" tabindex="-1"></a><span class="fu">toc</span>()</span>
-<span id="cb14-24"><a href="#cb14-24" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Naive approach (all graphs): 0.088 sec elapsed</span></span>
+<span id="cb14-24"><a href="#cb14-24" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Naive approach (all graphs): 0.086 sec elapsed</span></span>
 <span id="cb14-25"><a href="#cb14-25" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb14-26"><a href="#cb14-26" aria-hidden="true" tabindex="-1"></a><span class="co"># Verify results are equivalent (though data types may differ)</span></span>
 <span id="cb14-27"><a href="#cb14-27" aria-hidden="true" tabindex="-1"></a><span class="fu">all.equal</span>(vertex_counts_optimized, vertex_counts_naive)</span>
 <span id="cb14-28"><a href="#cb14-28" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
-<p><strong>The higher the redundancy, the bigger the performance gain!</strong> In real glycoproteomics datasets with repeated structures, this optimization can provide about 10x speedups.</p>
+<p>The higher the redundancy, the larger the performance gain. In real glycoproteomics datasets with repeated structures, this optimization can provide about 10x speedups.</p>
 </div>
-<div id="advanced-patterns-and-tips" class="section level2">
-<h2>Advanced Patterns and Tips 💡</h2>
+<div id="additional-patterns" class="section level2">
+<h2>Additional Patterns</h2>
 <div id="working-with-complex-functions" class="section level3">
 <h3>Working with Complex Functions</h3>
 <p>The function you pass to <code>smap</code> must accept an <code>igraph</code> object as its first argument. You can use purrr-style lambda notation:</p>
@@ -594,7 +593,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 </div>
 <div id="combining-multiple-metrics" class="section level3">
 <h3>Combining Multiple Metrics</h3>
-<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a comprehensive analysis</span></span>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a compact structure summary.</span></span>
 <span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>structure_analysis <span class="ot">&lt;-</span> <span class="fu">smap</span>(large_struc, <span class="cf">function</span>(g) {</span>
 <span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(</span>
 <span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">vertices =</span> igraph<span class="sc">::</span><span class="fu">vcount</span>(g),</span>
@@ -629,20 +628,20 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <h2>When to Use <code>smap</code> Functions</h2>
 <p><strong>Use <code>smap</code> functions when:</strong></p>
 <ul>
-<li>✅ You need to apply <code>igraph</code>-based functions to glycan structures</li>
-<li>✅ You want maximum performance with datasets containing repeated structures</li>
-<li>✅ You’re building custom glycan analysis pipelines</li>
+<li>You need to apply <code>igraph</code>-based functions to glycan structures.</li>
+<li>You want better performance with datasets containing repeated structures.</li>
+<li>You are building custom glycan analysis pipelines.</li>
 </ul>
-<p><strong>Stick with regular R functions when:</strong></p>
+<p><strong>Use regular R functions when:</strong></p>
 <ul>
-<li>❌ Working with compositions</li>
-<li>❌ Operating on string representations</li>
+<li>You are working with compositions.</li>
+<li>You are operating on string representations.</li>
 </ul>
-<p>⚠️ <strong>Special note on <code>simap</code></strong>:</p>
-<p>While <code>simap</code> functions are convenient for position-aware operations, they <strong>don’t provide performance benefits</strong> over regular <code>imap</code> functions. The inclusion of index information breaks the unique structure optimization, making each <code>(structure, index)</code> pair unique even when structures are identical.</p>
+<p><strong>Special note on <code>simap</code>:</strong></p>
+<p>While <code>simap</code> functions are convenient for position-aware operations, they do not provide performance benefits over regular <code>imap</code> functions. The inclusion of index information breaks the unique structure optimization, making each <code>(structure, index)</code> pair unique even when structures are identical.</p>
 </div>
-<div id="real-world-example-custom-motif-detection" class="section level2">
-<h2>Real-World Example: Custom Motif Detection</h2>
+<div id="example-custom-motif-detection" class="section level2">
+<h2>Example: Custom Motif Detection</h2>
 <p>Here’s how you might build a custom glycan analysis pipeline using <code>smap</code> functions:</p>
 <div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Custom motif detector</span></span>
 <span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>detect_branching <span class="ot">&lt;-</span> <span class="cf">function</span>(g) {</span>
@@ -650,7 +649,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">any</span>(degrees <span class="sc">&gt;=</span> <span class="dv">3</span>)</span>
 <span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>}</span>
 <span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Apply to large dataset - blazingly fast due to unique structure optimization</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Apply to a large dataset using unique structure optimization.</span></span>
 <span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>has_branching <span class="ot">&lt;-</span> <span class="fu">smap_lgl</span>(large_struc, detect_branching)</span>
 <span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Structures with branching:&quot;</span>, <span class="fu">sum</span>(has_branching), <span class="st">&quot;out of&quot;</span>, <span class="fu">length</span>(large_struc), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
 <span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Structures with branching: 2000 out of 5000</span></span>
@@ -663,18 +662,23 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Structures meeting complexity threshold:&quot;</span>, <span class="fu">sum</span>(meets_threshold), <span class="st">&quot;out of&quot;</span>, <span class="fu">length</span>(large_struc), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
 <span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Structures meeting complexity threshold: 2000 out of 5000</span></span></code></pre></div>
 </div>
-<div id="final-thoughts-youre-now-a-power-user" class="section level2">
-<h2>Final Thoughts: You’re Now a Power User! 🎉</h2>
-<p>Congratulations! You now understand the core optimization that makes <code>glyrepr</code> blazingly fast and how to leverage it with the <code>smap</code> family of functions.</p>
-<p><strong>Key takeaways:</strong> - 🧠 <strong>Unique structure optimization</strong> is the secret sauce behind <code>glyrepr</code>’s performance - 🚀 <strong><code>smap</code> functions</strong> are drop-in replacements for <code>purrr</code> that understand glycan structures - ⚡ <strong>Performance gains</strong> are dramatic with large datasets containing repeated structures - 🛠️ <strong>Use <code>smap</code> for structures</strong>, regular R functions for everything else</p>
-<p>You’re now equipped to build the next generation of glycomics analysis tools. Go forth and analyze! 🌟</p>
+<div id="summary" class="section level2">
+<h2>Summary</h2>
+<p>The <code>smap</code> family provides structure-aware mapping functions for glycan structure vectors. It lets you write custom graph-based analyses while preserving the unique structure optimization used by <code>glyrepr</code>.</p>
+<p>Key takeaways:</p>
+<ul>
+<li>Unique structure optimization stores repeated structures efficiently.</li>
+<li><code>smap</code> functions are <code>purrr</code>-like tools that understand glycan structure vectors.</li>
+<li>Performance gains are strongest when datasets contain repeated structures.</li>
+<li>Use <code>smap</code> for structures, and use regular R or <code>purrr</code> functions for other data types.</li>
+</ul>
 </div>
 <div id="session-information" class="section level2">
 <h2>Session Information</h2>
 <div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sessionInfo</span>()</span>
 <span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; R version 4.5.1 (2025-06-13)</span></span>
 <span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Platform: aarch64-apple-darwin20</span></span>
-<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Running under: macOS Tahoe 26.2</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Running under: macOS Tahoe 26.3.1</span></span>
 <span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Matrix products: default</span></span>
 <span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; BLAS:   /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libRblas.0.dylib </span></span>
@@ -690,18 +694,18 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] stats     graphics  grDevices utils     datasets  methods   base     </span></span>
 <span id="cb19-18"><a href="#cb19-18" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb19-19"><a href="#cb19-19" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; other attached packages:</span></span>
-<span id="cb19-20"><a href="#cb19-20" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] lobstr_1.1.3   dplyr_1.2.0    tibble_3.3.1   tictoc_1.2.1   purrr_1.2.1   </span></span>
-<span id="cb19-21"><a href="#cb19-21" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [6] glyrepr_0.10.1</span></span>
+<span id="cb19-20"><a href="#cb19-20" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] tictoc_1.2.1   lobstr_1.1.3   dplyr_1.2.1    tibble_3.3.1   purrr_1.2.2   </span></span>
+<span id="cb19-21"><a href="#cb19-21" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [6] glyrepr_0.11.0</span></span>
 <span id="cb19-22"><a href="#cb19-22" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb19-23"><a href="#cb19-23" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; loaded via a namespace (and not attached):</span></span>
 <span id="cb19-24"><a href="#cb19-24" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  [1] jsonlite_2.0.0    compiler_4.5.1    tidyselect_1.2.1  stringr_1.6.0    </span></span>
 <span id="cb19-25"><a href="#cb19-25" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  [5] jquerylib_0.1.4   yaml_2.3.12       fastmap_1.2.0     R6_2.6.1         </span></span>
-<span id="cb19-26"><a href="#cb19-26" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  [9] generics_0.1.4    igraph_2.2.1      knitr_1.51        backports_1.5.0  </span></span>
-<span id="cb19-27"><a href="#cb19-27" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [13] checkmate_2.3.3   rstackdeque_1.1.1 bslib_0.9.0       pillar_1.11.1    </span></span>
-<span id="cb19-28"><a href="#cb19-28" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [17] rlang_1.1.7       utf8_1.2.6        cachem_1.1.0      stringi_1.8.7    </span></span>
-<span id="cb19-29"><a href="#cb19-29" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [21] xfun_0.55         sass_0.4.10       otel_0.2.0        cli_3.6.5        </span></span>
-<span id="cb19-30"><a href="#cb19-30" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [25] magrittr_2.0.4    digest_0.6.39     lifecycle_1.0.5   prettyunits_1.2.0</span></span>
-<span id="cb19-31"><a href="#cb19-31" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [29] vctrs_0.7.1       evaluate_1.0.5    glue_1.8.0        rmarkdown_2.30   </span></span>
+<span id="cb19-26"><a href="#cb19-26" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  [9] generics_0.1.4    igraph_2.2.3      knitr_1.51        backports_1.5.1  </span></span>
+<span id="cb19-27"><a href="#cb19-27" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [13] checkmate_2.3.4   rstackdeque_1.1.1 bslib_0.9.0       pillar_1.11.1    </span></span>
+<span id="cb19-28"><a href="#cb19-28" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [17] rlang_1.2.0       utf8_1.2.6        cachem_1.1.0      stringi_1.8.7    </span></span>
+<span id="cb19-29"><a href="#cb19-29" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [21] xfun_0.55         sass_0.4.10       otel_0.2.0        cli_3.6.6        </span></span>
+<span id="cb19-30"><a href="#cb19-30" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [25] magrittr_2.0.5    digest_0.6.39     lifecycle_1.0.5   prettyunits_1.2.0</span></span>
+<span id="cb19-31"><a href="#cb19-31" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [29] vctrs_0.7.3       evaluate_1.0.5    glue_1.8.0        rmarkdown_2.30   </span></span>
 <span id="cb19-32"><a href="#cb19-32" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [33] tools_4.5.1       pkgconfig_2.0.3   htmltools_0.5.9</span></span></code></pre></div>
 </div>
 
