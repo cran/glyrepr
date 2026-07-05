@@ -9,9 +9,8 @@
 #' @details
 #' # Data Structure Overview
 #'
-#' A glycan structure vector is a vctrs record with an additional S3 class
-#' `glyrepr_structure`. Therefore, `sloop::s3_class()` returns the class hierarchy
-#' `c("glyrepr_structure", "vctrs_rcrd")`.
+#' A glycan structure vector is a vctrs vector with an additional S3 class
+#' `glyrepr_structure`.
 #'
 #' Each glycan structure must satisfy the following constraints:
 #'
@@ -65,15 +64,10 @@
 #' Glycan structure vectors can have names, which are preserved during operations.
 #' This is particularly useful when working with the `glymotif` package.
 #'
-#' # As characters
+#' # Character conversion
 #'
-#' One side-effect of the current implementation is that you can treat a glycan structure vector
-#' as a pure character vector of IUPAC-condensed strings.
-#' In fact, `is.character()` returns `TRUE` for a glycan structure vector,
-#' and all `stringr` functions work directly on the vector.
-#'
-#' However, we still recommend using `as.character()` to explicitly convert to character when needed,
-#' to avoid confusion and ensure that the intended behavior is clear.
+#' A glycan structure vector is not a character vector. Use `as.character()` to
+#' explicitly convert it to IUPAC-condensed strings when needed.
 #'
 #' @param ... igraph graph objects to be converted to glycan structures, or existing
 #'   glycan structure vectors. Supports mixed input of multiple objects.
@@ -359,10 +353,57 @@ validate_glycan_structure_vector <- function(graphs, label = NULL) {
 #' Helper function to create a new glycan structure vector
 #' @param iupac A character vector of IUPAC-condensed strings.
 #' @param graphs A list of igraph objects.
-#' @returns A glyrepr_structure object (a vctr object)
+#' @returns A glyrepr_structure object (a vctrs vector object)
 #' @noRd
 new_glycan_structure <- function(iupac = character(), graphs = list()) {
-  vctrs::new_vctr(iupac, graphs = graphs, class = "glyrepr_structure")
+  nms <- names(iupac)
+  iupac <- unname(iupac)
+
+  out <- vctrs::new_vctr(
+    as.list(iupac),
+    graphs = graphs,
+    class = "glyrepr_structure"
+  )
+  names(out) <- nms
+  out
+}
+
+#' Extract stored IUPAC-condensed strings from a glycan structure vector
+#'
+#' @param x A `glyrepr_structure` vector.
+#' @returns A character vector of IUPAC-condensed strings.
+#' @noRd
+glycan_structure_iupac_data <- function(x) {
+  data <- unclass(x)
+  attributes(data) <- NULL
+
+  if (length(data) == 0) {
+    return(character())
+  }
+
+  purrr::map_chr(data, identity)
+}
+
+#' Normalize vctrs restore input to IUPAC-condensed strings
+#'
+#' @param x Data passed to `vec_restore.glyrepr_structure()`.
+#' @returns A character vector of IUPAC-condensed strings.
+#' @noRd
+as_iupac_character <- function(x) {
+  if (inherits(x, "glyrepr_structure")) {
+    out <- glycan_structure_iupac_data(x)
+  } else if (is.character(x)) {
+    out <- x
+  } else if (is.data.frame(x) && "iupac" %in% names(x)) {
+    out <- x$iupac
+  } else if (is.list(x)) {
+    out <- purrr::map_chr(x, identity)
+  } else {
+    out <- vctrs::vec_data(x)
+  }
+
+  names(out) <- names(x)
+  out
 }
 
 #' Create a missing glycan structure vector
@@ -390,7 +431,7 @@ structure_na_mask <- function(x) {
 #' @returns A named list of graphs.
 #' @noRd
 filter_used_structure_graphs <- function(iupacs, graphs) {
-  used_codes <- unique(iupacs[!is.na(iupacs)])
+  used_codes <- unique(unname(iupacs[!is.na(iupacs)]))
   used_graphs <- graphs[used_codes]
   used_graphs[!vapply(used_graphs, is.null, logical(1))]
 }
@@ -416,6 +457,13 @@ is.na.glyrepr_structure <- function(x, ...) {
 }
 
 #' @export
+vec_proxy.glyrepr_structure <- function(x, ...) {
+  iupacs <- glycan_structure_iupac_data(x)
+  names(iupacs) <- names(x)
+  iupacs
+}
+
+#' @export
 vec_ptype_full.glyrepr_structure <- function(x, ...) "glycan_structure"
 
 #' @export
@@ -433,6 +481,34 @@ format.glyrepr_structure <- function(x, ...) {
   }
 
   formatted
+}
+
+#' @export
+as.list.glyrepr_structure <- function(x, ...) {
+  iupacs <- vctrs::vec_data(x)
+  graphs <- attr(x, "graphs")
+
+  out <- purrr::map(iupacs, function(iupac) {
+    if (is.na(iupac)) {
+      NULL
+    } else {
+      copy_structure_graph(graphs[[iupac]])
+    }
+  })
+  names(out) <- names(x)
+  out
+}
+
+#' Copy a glycan structure graph
+#'
+#' Use an identity permutation to materialize a separate igraph object while
+#' preserving vertices, edges, and attributes.
+#'
+#' @param graph An igraph object.
+#' @returns A copied igraph object.
+#' @noRd
+copy_structure_graph <- function(graph) {
+  igraph::permute(graph, seq_len(igraph::vcount(graph)))
 }
 
 #' Format a Subset of Glycan Structures with Optional Colors
@@ -646,19 +722,24 @@ glycan_structure_from_iupac_character <- function(x) {
   unique_x <- unique(non_na_x)
 
   graphs <- purrr::map(unique_x, .parse_iupac_condensed_single)
+  canonical <- canonicalize_and_validate_iupac_graphs(graphs)
 
-  if (any(na_mask)) {
-    unique_iupacs <- purrr::map_chr(graphs, .structure_to_iupac_single)
-    unique_indices <- which(!duplicated(unique_iupacs))
-    unique_graphs <- graphs[unique_indices]
-    names(unique_graphs) <- unique_iupacs[unique_indices]
+  result_iupacs <- rep(NA_character_, length(x))
+  result_iupacs[!na_mask] <- canonical$iupacs[match(non_na_x, unique_x)]
 
-    result_iupacs <- rep(NA_character_, length(x))
-    result_iupacs[!na_mask] <- unique_iupacs[match(non_na_x, unique_x)]
+  new_glycan_structure(result_iupacs, canonical$graphs)
+}
 
-    return(new_glycan_structure(result_iupacs, unique_graphs))
-  }
-
+#' Canonicalize and validate parsed IUPAC-condensed graphs
+#'
+#' Validates each parsed graph, reorders vertices and edges to the canonical
+#' IUPAC-condensed order, validates vector-level monosaccharide-type
+#' consistency, and deduplicates graph storage by canonical IUPAC string.
+#'
+#' @param graphs A list of parsed igraph graph objects.
+#' @returns A list with canonical `iupacs` and unique named `graphs`.
+#' @noRd
+canonicalize_and_validate_iupac_graphs <- function(graphs) {
   graphs <- purrr::map(graphs, function(graph) {
     graph %>%
       validate_single_glycan_structure() %>%
@@ -669,15 +750,15 @@ glycan_structure_from_iupac_character <- function(x) {
   graphs <- reordered_result$graphs
   validate_glycan_structure_vector(graphs)
 
-  unique_iupacs <- purrr::map_chr(graphs, .structure_to_iupac_single)
-  unique_indices <- which(!duplicated(unique_iupacs))
+  iupacs <- purrr::map_chr(graphs, .structure_to_iupac_single)
+  unique_indices <- which(!duplicated(iupacs))
   unique_graphs <- graphs[unique_indices]
-  names(unique_graphs) <- unique_iupacs[unique_indices]
+  names(unique_graphs) <- iupacs[unique_indices]
 
-  result_iupacs <- rep(NA_character_, length(x))
-  result_iupacs[!na_mask] <- unique_iupacs[match(non_na_x, unique_x)]
-
-  new_glycan_structure(result_iupacs, unique_graphs)
+  list(
+    iupacs = iupacs,
+    graphs = unique_graphs
+  )
 }
 
 #' @export
@@ -694,19 +775,20 @@ vec_cast.character.glyrepr_structure <- function(x, to, ...) {
 vec_restore.glyrepr_structure <- function(x, to, ...) {
   # Get the graphs attribute from the prototype
   graphs <- attr(to, "graphs")
+  iupacs <- as_iupac_character(x)
+  out_names <- names(iupacs)
 
   # If prototype has no graphs, return with empty graphs
   if (length(graphs) == 0) {
-    out <- vctrs::new_vctr(x, graphs = list(), class = "glyrepr_structure")
+    out <- new_glycan_structure(iupacs, list())
+    names(out) <- out_names
     return(out)
   }
 
-  # Get IUPAC codes from the data being restored
-  iupacs <- vctrs::vec_data(x)
-
   # If x is empty (e.g., during vec_ptype2), keep all graphs from prototype
   if (length(iupacs) == 0) {
-    out <- vctrs::new_vctr(x, graphs = graphs, class = "glyrepr_structure")
+    out <- new_glycan_structure(iupacs, graphs)
+    names(out) <- out_names
     return(out)
   }
 
@@ -714,26 +796,35 @@ vec_restore.glyrepr_structure <- function(x, to, ...) {
   # Use unique iupacs to handle duplicates correctly
   used_graphs <- filter_used_structure_graphs(iupacs, graphs)
 
-  out <- vctrs::new_vctr(x, graphs = used_graphs, class = "glyrepr_structure")
+  out <- new_glycan_structure(iupacs, used_graphs)
+  names(out) <- out_names
   out
 }
 
 #' @export
 `[.glyrepr_structure` <- function(x, i, ...) {
-  # Call the default subsetting behavior
-  out <- NextMethod("[")
-  # Filter graphs to only include those used in the subset
-  iupacs <- vctrs::vec_data(out)
-  graphs <- attr(out, "graphs")
-  # If result is empty, return with empty graphs
-  if (length(iupacs) == 0) {
-    attr(out, "graphs") <- list()
-    return(out)
+  if (missing(i)) {
+    return(x)
   }
-  if (length(graphs) > 0) {
-    used_graphs <- filter_used_structure_graphs(iupacs, graphs)
-    attr(out, "graphs") <- used_graphs
+
+  iupacs_all <- glycan_structure_iupac_data(x)
+  names(iupacs_all) <- names(x)
+  iupacs <- iupacs_all[i]
+  graphs <- filter_used_structure_graphs(iupacs, attr(x, "graphs"))
+  out <- new_glycan_structure(iupacs, graphs)
+
+  nms <- names(x)
+  if (!is.null(nms)) {
+    names(out) <- names(iupacs)
   }
+
+  out
+}
+
+#' @export
+`[[.glyrepr_structure` <- function(x, i, ...) {
+  out <- x[i]
+  names(out) <- NULL
   out
 }
 

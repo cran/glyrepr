@@ -10,8 +10,6 @@
 #'   Can be a function, purrr-style lambda (`~ .x$attr`), or a character string naming a function.
 #' @param ... Additional arguments passed to `.f`.
 #' @param .ptype A prototype for the return type (for `smap_vec`).
-#' @param .parallel Logical; whether to use parallel processing. If `FALSE` (default),
-#'   parallel processing is disabled. Set to `TRUE` to enable parallel processing.
 #'
 #' @details
 #' These functions only compute `.f` once for each unique structure, then map
@@ -82,40 +80,6 @@ NULL
 
   # Create result glycan_structure
   new_glycan_structure(new_iupacs, final_unique_graphs)
-}
-
-# Helper function for parallel processing
-.smap_apply <- function(
-  data_list,
-  func,
-  use_parallel = FALSE,
-  auto_threshold = 100,
-  ...
-) {
-  n_tasks <- length(data_list)
-
-  # Handle NULL values for backward compatibility
-  if (is.null(use_parallel)) {
-    use_parallel <- FALSE
-  }
-
-  if (use_parallel && n_tasks > 1) {
-    # Check if future backend is set up
-    if (!future::nbrOfWorkers() > 1) {
-      cli::cli_inform(
-        "No parallel backend detected. Using sequential processing."
-      )
-      use_parallel <- FALSE
-    }
-  } else if (use_parallel && n_tasks <= 1) {
-    use_parallel <- FALSE
-  }
-
-  if (use_parallel) {
-    furrr::future_map(data_list, func, ...)
-  } else {
-    purrr::map(data_list, func, ...)
-  }
 }
 
 #' Split a glycan structure vector into valid and missing positions
@@ -230,8 +194,80 @@ NULL
   valid_result
 }
 
+#' Map unique non-missing structure and argument combinations
+#'
+#' @param map_input Metadata from `.structure_map_input()`.
+#' @param args Additional argument vectors aligned to non-missing structures.
+#' @param .f A function called with one graph followed by values from `args`.
+#' @param dots Additional arguments captured from `...`.
+#' @param .structure Logical; whether `.f` must return igraph objects.
+#' @param .caller Public function name used in graph-return validation messages.
+#' @returns A list or glycan structure vector restored to the input shape.
+#' @noRd
+.map_structure_combinations <- function(
+  map_input,
+  args = list(),
+  .f,
+  dots = list(),
+  .structure = FALSE,
+  .caller = "map function"
+) {
+  if (map_input$all_na) {
+    if (.structure) {
+      return(.restore_structure_with_na(NULL, map_input))
+    }
+
+    result <- vector("list", length(map_input$codes))
+    result[map_input$na_mask] <- list(NA)
+    names(result) <- map_input$input_names
+    return(result)
+  }
+
+  combinations_df <- .structure_combo_table(map_input$valid_codes, args)
+  unique_combinations_df <- .unique_structure_combos(combinations_df)
+  n_args <- length(args)
+
+  unique_results <- purrr::map(
+    seq_len(nrow(unique_combinations_df)),
+    function(i) {
+      row <- unique_combinations_df[i, ]
+      mapped_args <- .extract_combo_args(row, n_args)
+      result <- do.call(
+        .f,
+        c(list(map_input$graphs[[row$code]]), mapped_args, dots)
+      )
+
+      if (.structure && !inherits(result, "igraph")) {
+        cli::cli_abort(paste0(
+          "Function `.f` must return an igraph object when using `",
+          .caller,
+          "`."
+        ))
+      }
+
+      result
+    }
+  )
+  names(unique_results) <- unique_combinations_df$combo_key
+
+  if (.structure) {
+    idx <- match(combinations_df$combo_key, unique_combinations_df$combo_key)
+    valid_result <- .rebuild_structure_with_dedup(unique_results, idx)
+    names(valid_result) <- map_input$valid_names
+    return(.restore_structure_with_na(valid_result, map_input))
+  }
+
+  valid_results <- purrr::map(
+    combinations_df$combo_key,
+    ~ unique_results[[.x]]
+  )
+  names(valid_results) <- map_input$valid_names
+
+  .restore_list_with_na(valid_results, map_input, na_value = NA)
+}
+
 # Helper function for common smap logic
-.smap_base <- function(.x, .f, ..., .parallel = FALSE, .convert_fn = NULL) {
+.smap_base <- function(.x, .f, ..., .convert_fn = NULL) {
   if (!is_glycan_structure(.x)) {
     cli::cli_abort("Input must be a glycan_structure vector.")
   }
@@ -256,17 +292,15 @@ NULL
     return(result)
   }
 
-  # Extract dots without .parallel
   dots <- list(...)
 
   # Apply function only to unique graphs (NA already filtered out)
   unique_codes <- names(map_input$graphs)
-  unique_results <- .smap_apply(
+  unique_results <- purrr::map(
     unique_codes,
     function(code) {
       do.call(.f, c(list(map_input$graphs[[code]]), dots))
-    },
-    use_parallel = .parallel
+    }
   )
   names(unique_results) <- unique_codes
 
@@ -326,30 +360,28 @@ NULL
 
 #' @rdname smap
 #' @export
-smap <- function(.x, .f, ..., .parallel = FALSE) {
-  .smap_base(.x, .f, ..., .parallel = .parallel, .convert_fn = NULL)
+smap <- function(.x, .f, ...) {
+  .smap_base(.x, .f, ..., .convert_fn = NULL)
 }
 
 #' @rdname smap
 #' @export
-smap_vec <- function(.x, .f, ..., .ptype = NULL, .parallel = FALSE) {
+smap_vec <- function(.x, .f, ..., .ptype = NULL) {
   .smap_base(
     .x,
     .f,
     ...,
-    .parallel = .parallel,
     .convert_fn = function(results) vctrs::vec_c(!!!results, .ptype = .ptype)
   )
 }
 
 #' @rdname smap
 #' @export
-smap_lgl <- function(.x, .f, ..., .parallel = FALSE) {
+smap_lgl <- function(.x, .f, ...) {
   .smap_base(
     .x,
     .f,
     ...,
-    .parallel = .parallel,
     .convert_fn = function(results) {
       as.logical(unlist(results, use.names = FALSE))
     }
@@ -358,12 +390,11 @@ smap_lgl <- function(.x, .f, ..., .parallel = FALSE) {
 
 #' @rdname smap
 #' @export
-smap_int <- function(.x, .f, ..., .parallel = FALSE) {
+smap_int <- function(.x, .f, ...) {
   .smap_base(
     .x,
     .f,
     ...,
-    .parallel = .parallel,
     .convert_fn = function(results) {
       as.integer(unlist(results, use.names = FALSE))
     }
@@ -372,12 +403,11 @@ smap_int <- function(.x, .f, ..., .parallel = FALSE) {
 
 #' @rdname smap
 #' @export
-smap_dbl <- function(.x, .f, ..., .parallel = FALSE) {
+smap_dbl <- function(.x, .f, ...) {
   .smap_base(
     .x,
     .f,
     ...,
-    .parallel = .parallel,
     .convert_fn = function(results) {
       as.double(unlist(results, use.names = FALSE))
     }
@@ -386,12 +416,11 @@ smap_dbl <- function(.x, .f, ..., .parallel = FALSE) {
 
 #' @rdname smap
 #' @export
-smap_chr <- function(.x, .f, ..., .parallel = FALSE) {
+smap_chr <- function(.x, .f, ...) {
   .smap_base(
     .x,
     .f,
     ...,
-    .parallel = .parallel,
     .convert_fn = function(results) {
       as.character(unlist(results, use.names = FALSE))
     }
@@ -400,7 +429,7 @@ smap_chr <- function(.x, .f, ..., .parallel = FALSE) {
 
 #' @rdname smap
 #' @export
-smap_structure <- function(.x, .f, ..., .parallel = FALSE) {
+smap_structure <- function(.x, .f, ...) {
   if (!is_glycan_structure(.x)) {
     cli::cli_abort("Input must be a glycan_structure vector.")
   }
@@ -408,7 +437,6 @@ smap_structure <- function(.x, .f, ..., .parallel = FALSE) {
   .f <- rlang::as_function(.f)
   map_input <- .structure_map_input(.x)
 
-  # Extract dots without .parallel
   dots <- list(...)
 
   if (map_input$all_na) {
@@ -417,7 +445,7 @@ smap_structure <- function(.x, .f, ..., .parallel = FALSE) {
 
   # Apply function only to unique graphs
   unique_iupacs <- names(map_input$graphs)
-  new_graphs <- .smap_apply(
+  new_graphs <- purrr::map(
     unique_iupacs,
     function(iupac) {
       result <- do.call(.f, c(list(map_input$graphs[[iupac]]), dots))
@@ -427,8 +455,7 @@ smap_structure <- function(.x, .f, ..., .parallel = FALSE) {
         )
       }
       result
-    },
-    use_parallel = .parallel
+    }
   )
 
   # Rebuild glycan_structure with proper deduplication
@@ -452,10 +479,6 @@ smap_structure <- function(.x, .f, ..., .parallel = FALSE) {
 #' @param .f A function that takes an igraph object and returns a result.
 #'   Can be a function, purrr-style lambda (`~ .x$attr`), or a character string naming a function.
 #' @param ... Additional arguments passed to `.f`.
-#' @param .parallel Logical; whether to use parallel processing. If `FALSE` (default),
-#'   parallel processing is disabled. Set to `TRUE` to enable parallel processing.
-#'   See examples in \code{\link{smap}} for how to set up and use parallel processing.
-#'
 #' @return A list with results for each unique structure, named by their hash codes.
 #'
 #' @examples
@@ -472,7 +495,7 @@ smap_structure <- function(.x, .f, ..., .parallel = FALSE) {
 #' length(unique_results2)  # 1, not 3
 #'
 #' @export
-smap_unique <- function(.x, .f, ..., .parallel = FALSE) {
+smap_unique <- function(.x, .f, ...) {
   if (!is_glycan_structure(.x)) {
     cli::cli_abort("Input must be a glycan_structure vector.")
   }
@@ -481,16 +504,14 @@ smap_unique <- function(.x, .f, ..., .parallel = FALSE) {
 
   graphs <- attr(.x, "graphs")
 
-  # Extract dots without .parallel
   dots <- list(...)
 
   # Apply function only to unique graphs
-  results <- .smap_apply(
+  results <- purrr::map(
     graphs,
     function(g) {
       do.call(.f, c(list(g), dots))
-    },
-    use_parallel = .parallel
+    }
   )
   results
 }
@@ -600,9 +621,6 @@ snone <- function(.x, .p, ...) {
 #'   Can be a function, purrr-style lambda (`~ .x + .y`), or a character string naming a function.
 #' @param ... Additional arguments passed to `.f`.
 #' @param .ptype A prototype for the return type (for `smap2_vec`).
-#' @param .parallel Logical; whether to use parallel processing. If `FALSE` (default),
-#'   parallel processing is disabled. Set to `TRUE` to enable parallel processing.
-#'   See examples in \code{\link{smap}} for how to set up and use parallel processing.
 #'
 #' @details
 #' These functions only compute `.f` once for each unique combination of structure and corresponding
@@ -658,184 +676,85 @@ NULL
 
 #' @rdname smap2
 #' @export
-smap2 <- function(.x, .y, .f, ..., .parallel = FALSE) {
-  # FUNCTION-LEVEL BUG FIX DOCUMENTATION:
-  #
-  # This function previously had a critical bug when handling nested list objects
-  # in the .y parameter. The issue occurred in two places:
-  #
-  # 1. DATA FRAME EXPANSION BUG:
-  #    Using data.frame() with nested lists caused unwanted row expansion.
-  #    Example: .y = list(list(c(6,5,4,3,2,1))) would create 6 rows instead of 1,
-  #    breaking the 1:1 correspondence with glycan structures.
-  #
-  # 2. LIST-COLUMN EXTRACTION BUG:
-  #    When extracting values from tibble list-columns, an extra layer of list
-  #    wrapping was not properly handled.
-  #
-  # SOLUTION:
-  #    - Replace data.frame() with tibble::tibble() for proper list-column support
-  #    - Implement hash-based keys for complex list objects
-  #    - Add proper unwrapping logic when extracting from list-columns
-  #
-  # This fix ensures smap2 works correctly with nested data structures commonly
-  # used in glycan analysis workflows.
-
+smap2 <- function(.x, .y, .f, ...) {
   if (!is_glycan_structure(.x)) {
     cli::cli_abort("Input `.x` must be a glycan_structure vector.")
   }
 
-  # Handle empty input
   if (length(.x) == 0) {
     return(list())
   }
 
-  # Recycle .y to match length of .x
   .y <- vctrs::vec_recycle(.y, length(.x))
-
   .f <- rlang::as_function(.f)
 
   map_input <- .structure_map_input(.x)
-
-  # If all elements are NA, return NA results
-  if (map_input$all_na) {
-    result <- vector("list", length(map_input$codes))
-    result[map_input$na_mask] <- list(NA)
-    names(result) <- map_input$input_names
-    return(result)
-  }
-
   valid_y <- .y[!map_input$na_mask]
 
-  # Create unique combinations data frame for proper handling
-  #
-  # BUG FIX NOTES:
-  # Prior to this fix, using data.frame() with nested list objects in the y_val column
-  # caused unwanted expansion where the inner vectors would be unwrapped into separate rows.
-  # For example, if .y = list(list(c(6,5,4,3,2,1))), data.frame() would create 6 rows
-  # instead of 1, breaking the length correspondence with the glycan structures.
-  #
-  # The fix involves two changes:
-  # 1. Use tibble::tibble() instead of data.frame() to properly handle list-columns
-  # 2. Create hash-based keys for complex list objects to enable proper deduplication
-
-  combinations_df <- .structure_combo_table(
-    map_input$valid_codes,
-    list(valid_y)
+  .map_structure_combinations(
+    map_input,
+    list(valid_y),
+    .f,
+    dots = list(...)
   )
-  unique_combinations_df <- .unique_structure_combos(combinations_df)
-
-  # Apply function only to unique combinations
-  unique_results <- .smap_apply(
-    seq_len(nrow(unique_combinations_df)),
-    function(i) {
-      row <- unique_combinations_df[i, ]
-      y_val <- .extract_combo_args(row, 1)[[1]]
-
-      .f(map_input$graphs[[row$code]], y_val, ...)
-    },
-    use_parallel = .parallel
-  )
-  names(unique_results) <- unique_combinations_df$combo_key
-
-  # Map results back to original vector positions
-  valid_results <- purrr::map(combinations_df$combo_key, ~ unique_results[[.x]])
-  names(valid_results) <- map_input$valid_names
-
-  .restore_list_with_na(valid_results, map_input, na_value = NA)
 }
 
 #' @rdname smap2
 #' @export
-smap2_vec <- function(.x, .y, .f, ..., .ptype = NULL, .parallel = FALSE) {
-  results <- smap2(.x, .y, .f, ..., .parallel = .parallel)
+smap2_vec <- function(.x, .y, .f, ..., .ptype = NULL) {
+  results <- smap2(.x, .y, .f, ...)
   vctrs::vec_c(!!!results, .ptype = .ptype)
 }
 
 #' @rdname smap2
 #' @export
-smap2_lgl <- function(.x, .y, .f, ..., .parallel = FALSE) {
-  smap2_vec(.x, .y, .f, ..., .ptype = logical(), .parallel = .parallel)
+smap2_lgl <- function(.x, .y, .f, ...) {
+  smap2_vec(.x, .y, .f, ..., .ptype = logical())
 }
 
 #' @rdname smap2
 #' @export
-smap2_int <- function(.x, .y, .f, ..., .parallel = FALSE) {
-  smap2_vec(.x, .y, .f, ..., .ptype = integer(), .parallel = .parallel)
+smap2_int <- function(.x, .y, .f, ...) {
+  smap2_vec(.x, .y, .f, ..., .ptype = integer())
 }
 
 #' @rdname smap2
 #' @export
-smap2_dbl <- function(.x, .y, .f, ..., .parallel = FALSE) {
-  smap2_vec(.x, .y, .f, ..., .ptype = double(), .parallel = .parallel)
+smap2_dbl <- function(.x, .y, .f, ...) {
+  smap2_vec(.x, .y, .f, ..., .ptype = double())
 }
 
 #' @rdname smap2
 #' @export
-smap2_chr <- function(.x, .y, .f, ..., .parallel = FALSE) {
-  smap2_vec(.x, .y, .f, ..., .ptype = character(), .parallel = .parallel)
+smap2_chr <- function(.x, .y, .f, ...) {
+  smap2_vec(.x, .y, .f, ..., .ptype = character())
 }
 
 #' @rdname smap2
 #' @export
-smap2_structure <- function(.x, .y, .f, ..., .parallel = FALSE) {
+smap2_structure <- function(.x, .y, .f, ...) {
   if (!is_glycan_structure(.x)) {
     cli::cli_abort("Input `.x` must be a glycan_structure vector.")
   }
 
-  # Handle empty input
   if (length(.x) == 0) {
     return(glycan_structure())
   }
 
-  # Recycle .y to match length of .x
   .y <- vctrs::vec_recycle(.y, length(.x))
-
   .f <- rlang::as_function(.f)
 
   map_input <- .structure_map_input(.x)
-
-  # If all elements are NA, return NA structure
-  if (map_input$all_na) {
-    return(.restore_structure_with_na(NULL, map_input))
-  }
-
   valid_y <- .y[!map_input$na_mask]
 
-  # Create unique combinations data frame for proper handling
-  # BUG FIX: Use tibble to prevent unwanted expansion of nested lists (same fix as smap2)
-  combinations_df <- .structure_combo_table(
-    map_input$valid_codes,
-    list(valid_y)
+  .map_structure_combinations(
+    map_input,
+    list(valid_y),
+    .f,
+    dots = list(...),
+    .structure = TRUE,
+    .caller = "smap2_structure()"
   )
-  unique_combinations_df <- .unique_structure_combos(combinations_df)
-
-  # Apply function only to unique combinations
-  new_graphs <- .smap_apply(
-    seq_len(nrow(unique_combinations_df)),
-    function(i) {
-      row <- unique_combinations_df[i, ]
-      y_val <- .extract_combo_args(row, 1)[[1]]
-
-      result <- .f(map_input$graphs[[row$code]], y_val, ...)
-      if (!inherits(result, "igraph")) {
-        cli::cli_abort(
-          "Function `.f` must return an igraph object when using `smap2_structure()`."
-        )
-      }
-      result
-    },
-    use_parallel = .parallel
-  )
-
-  # Rebuild glycan_structure with proper deduplication
-  idx <- match(combinations_df$combo_key, unique_combinations_df$combo_key)
-  valid_result <- .rebuild_structure_with_dedup(new_graphs, idx)
-
-  # Restore names for valid results
-  names(valid_result) <- map_input$valid_names
-
-  .restore_structure_with_na(valid_result, map_input)
 }
 
 #' Map Functions Over Glycan Structure Vectors and Multiple Arguments
@@ -853,9 +772,6 @@ smap2_structure <- function(.x, .y, .f, ..., .parallel = FALSE) {
 #'   Can be a function, purrr-style lambda (`~ .x + .y + .z`), or a character string naming a function.
 #' @param ... Additional arguments passed to `.f`.
 #' @param .ptype A prototype for the return type (for `spmap_vec`).
-#' @param .parallel Logical; whether to use parallel processing. If `FALSE` (default),
-#'   parallel processing is disabled. Set to `TRUE` to enable parallel processing.
-#'   See examples in \code{\link{smap}} for how to set up and use parallel processing.
 #'
 #' @details
 #' These functions only compute `.f` once for each unique combination of structure and corresponding
@@ -908,14 +824,7 @@ NULL
 
 #' @rdname spmap
 #' @export
-spmap <- function(.l, .f, ..., .parallel = FALSE) {
-  # FUNCTION-LEVEL BUG FIX DOCUMENTATION:
-  # This function had a similar bug to smap2 where data.frame() would unwrap
-  # nested list arguments, causing incorrect row expansion. Fixed by using tibble
-  # and proper hash-based key generation for complex objects.
-  # Also fixed NA handling to skip NA elements in the structure vector.
-
-  # Check if it's actually a plain list, not a vctrs object that looks like a list
+spmap <- function(.l, .f, ...) {
   if (!inherits(.l, "list") || inherits(.l, "vctrs_vctr") || length(.l) == 0) {
     cli::cli_abort("Input `.l` must be a non-empty list.")
   }
@@ -924,96 +833,59 @@ spmap <- function(.l, .f, ..., .parallel = FALSE) {
     cli::cli_abort("First element of `.l` must be a glycan_structure vector.")
   }
 
-  # Handle empty input
   if (length(.l[[1]]) == 0) {
     return(list())
   }
 
-  # Recycle all vectors to match length of first vector
   target_length <- length(.l[[1]])
   .l <- purrr::map(.l, ~ vctrs::vec_recycle(.x, target_length))
-
   .f <- rlang::as_function(.f)
 
   map_input <- .structure_map_input(.l[[1]])
-
-  # If all elements are NA, return NA results
-  if (map_input$all_na) {
-    result <- vector("list", length(map_input$codes))
-    result[map_input$na_mask] <- list(NA)
-    names(result) <- map_input$input_names
-    return(result)
-  }
-
   valid_args <- purrr::map(.l[-1], ~ .x[!map_input$na_mask])
 
-  # Create unique combinations data frame for proper handling
-  # BUG FIX: Use tibble to prevent unwanted expansion of nested lists
-  combinations_df <- .structure_combo_table(map_input$valid_codes, valid_args)
-  unique_combinations_df <- .unique_structure_combos(combinations_df)
-
-  # Apply function only to unique combinations
-  unique_results <- .smap_apply(
-    seq_len(nrow(unique_combinations_df)),
-    function(i) {
-      row <- unique_combinations_df[i, ]
-      # Build full argument list: first is structure, then other args
-      args <- c(
-        list(map_input$graphs[[row$code]]),
-        .extract_combo_args(row, length(valid_args))
-      )
-      do.call(.f, c(args, list(...)))
-    },
-    use_parallel = .parallel
+  .map_structure_combinations(
+    map_input,
+    valid_args,
+    .f,
+    dots = list(...)
   )
-  names(unique_results) <- unique_combinations_df$combo_key
-
-  # Map results back to original positions
-  valid_results <- purrr::map(combinations_df$combo_key, ~ unique_results[[.x]])
-  names(valid_results) <- map_input$valid_names
-
-  .restore_list_with_na(valid_results, map_input, na_value = NA)
 }
 
 #' @rdname spmap
 #' @export
-spmap_vec <- function(.l, .f, ..., .ptype = NULL, .parallel = FALSE) {
-  results <- spmap(.l, .f, ..., .parallel = .parallel)
+spmap_vec <- function(.l, .f, ..., .ptype = NULL) {
+  results <- spmap(.l, .f, ...)
   vctrs::vec_c(!!!results, .ptype = .ptype)
 }
 
 #' @rdname spmap
 #' @export
-spmap_lgl <- function(.l, .f, ..., .parallel = FALSE) {
-  spmap_vec(.l, .f, ..., .ptype = logical(), .parallel = .parallel)
+spmap_lgl <- function(.l, .f, ...) {
+  spmap_vec(.l, .f, ..., .ptype = logical())
 }
 
 #' @rdname spmap
 #' @export
-spmap_int <- function(.l, .f, ..., .parallel = FALSE) {
-  spmap_vec(.l, .f, ..., .ptype = integer(), .parallel = .parallel)
+spmap_int <- function(.l, .f, ...) {
+  spmap_vec(.l, .f, ..., .ptype = integer())
 }
 
 #' @rdname spmap
 #' @export
-spmap_dbl <- function(.l, .f, ..., .parallel = FALSE) {
-  spmap_vec(.l, .f, ..., .ptype = double(), .parallel = .parallel)
+spmap_dbl <- function(.l, .f, ...) {
+  spmap_vec(.l, .f, ..., .ptype = double())
 }
 
 #' @rdname spmap
 #' @export
-spmap_chr <- function(.l, .f, ..., .parallel = FALSE) {
-  spmap_vec(.l, .f, ..., .ptype = character(), .parallel = .parallel)
+spmap_chr <- function(.l, .f, ...) {
+  spmap_vec(.l, .f, ..., .ptype = character())
 }
 
 #' @rdname spmap
 #' @export
-spmap_structure <- function(.l, .f, ..., .parallel = FALSE) {
-  # FUNCTION-LEVEL BUG FIX DOCUMENTATION:
-  # This function had the same nested list expansion bug as spmap and smap2.
-  # Fixed by using tibble and proper list-column handling.
-  # Also fixed NA handling to skip NA elements in the structure vector.
-
+spmap_structure <- function(.l, .f, ...) {
   if (!is.list(.l) || length(.l) == 0) {
     cli::cli_abort("Input `.l` must be a non-empty list.")
   }
@@ -1022,58 +894,25 @@ spmap_structure <- function(.l, .f, ..., .parallel = FALSE) {
     cli::cli_abort("First element of `.l` must be a glycan_structure vector.")
   }
 
-  # Handle empty input
   if (length(.l[[1]]) == 0) {
     return(glycan_structure())
   }
 
-  # Recycle all vectors to match length of first vector
   target_length <- length(.l[[1]])
   .l <- purrr::map(.l, ~ vctrs::vec_recycle(.x, target_length))
-
   .f <- rlang::as_function(.f)
 
   map_input <- .structure_map_input(.l[[1]])
-
-  # If all elements are NA, return NA structure
-  if (map_input$all_na) {
-    return(.restore_structure_with_na(NULL, map_input))
-  }
-
   valid_args <- purrr::map(.l[-1], ~ .x[!map_input$na_mask])
 
-  # Create unique combinations data frame for proper handling
-  # BUG FIX: Use tibble to prevent unwanted expansion of nested lists
-  combinations_df <- .structure_combo_table(map_input$valid_codes, valid_args)
-  unique_combinations_df <- .unique_structure_combos(combinations_df)
-
-  # Apply function only to unique combinations
-  new_graphs <- .smap_apply(
-    seq_len(nrow(unique_combinations_df)),
-    function(i) {
-      row <- unique_combinations_df[i, ]
-      # Build full argument list: first is structure, then other args
-      args <- c(
-        list(map_input$graphs[[row$code]]),
-        .extract_combo_args(row, length(valid_args))
-      )
-      result <- do.call(.f, c(args, list(...)))
-      if (!inherits(result, "igraph")) {
-        cli::cli_abort(
-          "Function `.f` must return an igraph object when using `spmap_structure()`."
-        )
-      }
-      result
-    },
-    use_parallel = .parallel
+  .map_structure_combinations(
+    map_input,
+    valid_args,
+    .f,
+    dots = list(...),
+    .structure = TRUE,
+    .caller = "spmap_structure()"
   )
-
-  # Rebuild glycan_structure with proper deduplication
-  idx <- match(combinations_df$combo_key, unique_combinations_df$combo_key)
-  valid_result <- .rebuild_structure_with_dedup(new_graphs, idx)
-  names(valid_result) <- map_input$valid_names
-
-  .restore_structure_with_na(valid_result, map_input)
 }
 
 #' Map Functions Over Glycan Structure Vectors with Indices
@@ -1151,15 +990,7 @@ simap <- function(.x, .f, ...) {
   }
 
   .f <- rlang::as_function(.f)
-
   map_input <- .structure_map_input(.x)
-
-  if (map_input$all_na) {
-    result <- vector("list", length(map_input$codes))
-    result[map_input$na_mask] <- list(NA)
-    names(result) <- map_input$input_names
-    return(result)
-  }
 
   # Get indices or names
   if (!is.null(names(.x))) {
@@ -1170,29 +1001,12 @@ simap <- function(.x, .f, ...) {
 
   valid_indices <- indices[!map_input$na_mask]
 
-  # Create unique combinations data frame for proper handling
-  combinations_df <- .structure_combo_table(
-    map_input$valid_codes,
-    list(valid_indices)
+  .map_structure_combinations(
+    map_input,
+    list(valid_indices),
+    .f,
+    dots = list(...)
   )
-  unique_combinations_df <- .unique_structure_combos(combinations_df)
-
-  # Apply function only to unique combinations
-  unique_results <- purrr::map(
-    seq_len(nrow(unique_combinations_df)),
-    function(i) {
-      row <- unique_combinations_df[i, ]
-      index <- .extract_combo_args(row, 1)[[1]]
-      .f(map_input$graphs[[row$code]], index, ...)
-    }
-  )
-  names(unique_results) <- unique_combinations_df$combo_key
-
-  # Map results back to original vector positions
-  result <- purrr::map(combinations_df$combo_key, ~ unique_results[[.x]])
-  names(result) <- valid_indices
-
-  .restore_list_with_na(result, map_input, na_value = NA)
 }
 
 #' @rdname simap
@@ -1239,12 +1053,7 @@ simap_structure <- function(.x, .f, ...) {
   }
 
   .f <- rlang::as_function(.f)
-
   map_input <- .structure_map_input(.x)
-
-  if (map_input$all_na) {
-    return(.restore_structure_with_na(NULL, map_input))
-  }
 
   # Get indices or names
   if (!is.null(names(.x))) {
@@ -1255,30 +1064,12 @@ simap_structure <- function(.x, .f, ...) {
 
   valid_indices <- indices[!map_input$na_mask]
 
-  # Create unique combinations data frame for proper handling
-  combinations_df <- .structure_combo_table(
-    map_input$valid_codes,
-    list(valid_indices)
+  .map_structure_combinations(
+    map_input,
+    list(valid_indices),
+    .f,
+    dots = list(...),
+    .structure = TRUE,
+    .caller = "simap_structure()"
   )
-  unique_combinations_df <- .unique_structure_combos(combinations_df)
-
-  # Apply function only to unique combinations
-  new_graphs <- purrr::map(seq_len(nrow(unique_combinations_df)), function(i) {
-    row <- unique_combinations_df[i, ]
-    index <- .extract_combo_args(row, 1)[[1]]
-    result <- .f(map_input$graphs[[row$code]], index, ...)
-    if (!inherits(result, "igraph")) {
-      cli::cli_abort(
-        "Function `.f` must return an igraph object when using `simap_structure()`."
-      )
-    }
-    result
-  })
-
-  # Rebuild glycan_structure with proper deduplication
-  idx <- match(combinations_df$combo_key, unique_combinations_df$combo_key)
-  valid_result <- .rebuild_structure_with_dedup(new_graphs, idx)
-  names(valid_result) <- valid_indices
-
-  .restore_structure_with_na(valid_result, map_input)
 }

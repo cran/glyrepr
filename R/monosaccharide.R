@@ -115,37 +115,46 @@ available_monosaccharides <- function(mono_type = "all") {
 }
 
 
-#' Get Anomer Positions
+#' Infer Anomer Positions
 #'
-#' This function returns the anomer position for concrete monosaccharide names.
+#' This function infers the anomer position for concrete or generic
+#' monosaccharide names.
 #'
-#' @param mono A character vector of concrete monosaccharide names.
+#' @param mono A character vector of monosaccharide names.
 #'
 #' @returns An integer vector of anomer positions.
 #'
+#' @aliases get_anomer_pos
+#'
 #' @examples
-#' get_anomer_pos(c("Gal", "Neu5Ac"))
+#' infer_anomer_pos(c("Gal", "Hex", "Neu5Ac"))
 #'
 #' @export
-get_anomer_pos <- function(mono) {
+infer_anomer_pos <- function(mono) {
   checkmate::assert_character(mono, any.missing = FALSE)
 
-  anomer_pos <- monosaccharides$anomer_pos[match(
-    mono,
-    monosaccharides$concrete
-  )]
+  mono_names <- c(monosaccharides$concrete, monosaccharides$generic)
+  mono_anomer_pos <- c(monosaccharides$anomer_pos, monosaccharides$anomer_pos)
+  anomer_pos <- mono_anomer_pos[match(mono, mono_names)]
   unknown_monos <- mono[is.na(anomer_pos)]
 
   if (length(unknown_monos) > 0) {
     cli::cli_abort(c(
-      "{.arg mono} must contain only concrete monosaccharide names.",
+      "{.arg mono} must contain only known monosaccharide names.",
       "x" = "Invalid value{?s}: {.val {unique(unknown_monos)}}.",
-      "i" = "Call {.fun available_monosaccharides} with {.val concrete} to see supported names."
+      "i" = "Call {.fun available_monosaccharides} to see supported names."
     ))
   }
 
   names(anomer_pos) <- names(mono)
   anomer_pos
+}
+
+
+#' @rdname infer_anomer_pos
+#' @export
+get_anomer_pos <- function(mono) {
+  infer_anomer_pos(mono)
 }
 
 

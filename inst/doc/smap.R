@@ -25,7 +25,7 @@ large_struc
 
 ## -----------------------------------------------------------------------------
 # Only 5 unique graphs are stored internally
-length(attr(large_struc, "structures"))
+length(attr(large_struc, "graphs"))
 
 # But we have 5,000 total elements
 length(large_struc)

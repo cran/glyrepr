@@ -192,6 +192,10 @@ colorize_iupac_string <- function(iupac_text, mono_names) {
     return("Neu5Ac")
   } else if (stringr::str_starts(mono, "Neu5Ac") && nchar(mono) > 6) {
     return("Neu5Ac")
+  } else if (mono == "Neu5Gc") {
+    return("Neu5Gc")
+  } else if (stringr::str_starts(mono, "Neu5Gc") && nchar(mono) > 6) {
+    return("Neu5Gc")
   } else if (mono == "Neu4Ac5Ac") {
     return("Neu5Ac")
   } else if (mono == "Neu4Ac5Gc") {
@@ -199,7 +203,7 @@ colorize_iupac_string <- function(iupac_text, mono_names) {
   }
 
   # For other monosaccharides, remove substituents
-  subs_pattern <- stringr::str_c(available_substituents(), collapse = "|")
+  subs_pattern <- substituent_name_pattern(longest_first = TRUE)
   single_sub_pattern <- stringr::str_glue("[1-9\\?]({subs_pattern})")
 
   # Find all substituents

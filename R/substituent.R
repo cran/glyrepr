@@ -9,7 +9,26 @@
 #'
 #' @export
 available_substituents <- function() {
-  c("Me", "Ac", "NAc", "P", "S", "Pyr", "PC", "PPEtn", "PEtn", "N")
+  c("Me", "Ac", "NAc", "NGc", "P", "S", "Pyr", "PC", "PPEtn", "PEtn", "N", "Gc")
+}
+
+#' Build a Substituent Name Regex Pattern
+#'
+#' @param longest_first Whether to sort longer substituent names before shorter
+#'   names in the regex alternation.
+#'
+#' @returns A regex alternation pattern for known substituent names.
+#'
+#' @noRd
+substituent_name_pattern <- function(longest_first = FALSE) {
+  checkmate::assert_flag(longest_first)
+
+  substituents <- available_substituents()
+  if (longest_first) {
+    substituents <- substituents[order(nchar(substituents), decreasing = TRUE)]
+  }
+
+  stringr::str_c(stringr::str_escape(substituents), collapse = "|")
 }
 
 #' Normalize Substituent String
@@ -42,22 +61,77 @@ normalize_substituents <- function(sub) {
     return("")
   }
 
-  # Extract positions for sorting
-  positions <- purrr::map_chr(
-    individual_subs,
+  collapse_substituent_tokens(individual_subs)
+}
+
+#' Get Substituent Position Tokens
+#'
+#' Extracts the leading substituent positions from substituent tokens.
+#'
+#' @param subs A character vector of substituent tokens.
+#'
+#' @returns A character vector of position tokens.
+#'
+#' @noRd
+substituent_position_tokens <- function(subs) {
+  purrr::map_chr(
+    subs,
     ~ stringr::str_extract(.x, "^[\\d\\?]")
   )
+}
 
-  # Convert to numeric for sorting (? becomes Inf)
-  numeric_positions <- purrr::map_dbl(positions, function(pos) {
+#' Get Numeric Substituent Position Values
+#'
+#' Converts substituent position tokens to numeric values, using `Inf` for
+#' unknown positions so they sort after known positions.
+#'
+#' @param subs A character vector of substituent tokens.
+#'
+#' @returns A numeric vector of position values.
+#'
+#' @noRd
+substituent_position_values <- function(subs) {
+  positions <- substituent_position_tokens(subs)
+
+  purrr::map_dbl(positions, function(pos) {
     if (pos == "?") Inf else as.numeric(pos)
   })
+}
 
-  # Sort and combine
-  sorted_indices <- order(numeric_positions)
-  sorted_subs <- individual_subs[sorted_indices]
+#' Sort Substituent Tokens by Position
+#'
+#' Sorts substituent tokens by their leading position, placing unknown positions
+#' after known positions.
+#'
+#' @param subs A character vector of substituent tokens.
+#'
+#' @returns A character vector sorted by position.
+#'
+#' @noRd
+sort_substituent_tokens <- function(subs) {
+  if (length(subs) == 0) {
+    return(character(0))
+  }
 
-  stringr::str_c(sorted_subs, collapse = ",")
+  subs[order(substituent_position_values(subs))]
+}
+
+#' Collapse Sorted Substituent Tokens
+#'
+#' Sorts substituent tokens by position and collapses them to the comma-separated
+#' representation used in glycan structures.
+#'
+#' @param subs A character vector of substituent tokens.
+#'
+#' @returns A comma-separated substituent string.
+#'
+#' @noRd
+collapse_substituent_tokens <- function(subs) {
+  if (length(subs) == 0) {
+    return("")
+  }
+
+  stringr::str_c(sort_substituent_tokens(subs), collapse = ",")
 }
 
 #' Remove All Substituents from a Glycan

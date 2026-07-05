@@ -401,8 +401,8 @@ positions they belong to.</p>
 has 5,000 elements, but only 5 unique graphs are stored internally.</p>
 <p>We can verify that directly:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="co"># Only 5 unique graphs are stored internally</span></span>
-<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="fu">length</span>(<span class="fu">attr</span>(large_struc, <span class="st">&quot;structures&quot;</span>))</span>
-<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="fu">length</span>(<span class="fu">attr</span>(large_struc, <span class="st">&quot;graphs&quot;</span>))</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="co">#&gt; [1] 5</span></span>
 <span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a></span>
 <span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co"># But we have 5,000 total elements</span></span>
 <span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="fu">length</span>(large_struc)</span>
@@ -417,8 +417,8 @@ has 5,000 elements, but only 5 unique graphs are stored internally.</p>
 <span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt;     src</span></span>
 <span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="fu">obj_sizes</span>(struc, large_struc)</span>
-<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt; * 15.18 kB</span></span>
-<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt; * 40.69 kB</span></span></code></pre></div>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt; *  15.54 kB</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt; * 320.69 kB</span></span></code></pre></div>
 <p>The memory difference can be substantial. For repeated structures,
 the optimized representation can be much smaller than storing every
 graph independently.</p>
@@ -605,14 +605,14 @@ from automatic deduplication:</p>
 <span id="cb14-14"><a href="#cb14-14" tabindex="-1"></a><span class="fu">tic</span>(<span class="st">&quot;smap_int (optimized)&quot;</span>)</span>
 <span id="cb14-15"><a href="#cb14-15" tabindex="-1"></a>vertex_counts_optimized <span class="ot">&lt;-</span> <span class="fu">smap_int</span>(huge_struc, igraph<span class="sc">::</span>vcount)</span>
 <span id="cb14-16"><a href="#cb14-16" tabindex="-1"></a><span class="fu">toc</span>()</span>
-<span id="cb14-17"><a href="#cb14-17" tabindex="-1"></a><span class="co">#&gt; smap_int (optimized): 0.002 sec elapsed</span></span>
+<span id="cb14-17"><a href="#cb14-17" tabindex="-1"></a><span class="co">#&gt; smap_int (optimized): 0.015 sec elapsed</span></span>
 <span id="cb14-18"><a href="#cb14-18" tabindex="-1"></a></span>
 <span id="cb14-19"><a href="#cb14-19" tabindex="-1"></a><span class="co"># Naive approach: extract all graphs and process each one</span></span>
 <span id="cb14-20"><a href="#cb14-20" tabindex="-1"></a><span class="fu">tic</span>(<span class="st">&quot;Naive approach (all graphs)&quot;</span>)</span>
 <span id="cb14-21"><a href="#cb14-21" tabindex="-1"></a>all_graphs <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(huge_struc)  <span class="co"># Extracts all 25,000 graphs</span></span>
 <span id="cb14-22"><a href="#cb14-22" tabindex="-1"></a>vertex_counts_naive <span class="ot">&lt;-</span> purrr<span class="sc">::</span><span class="fu">map_int</span>(all_graphs, igraph<span class="sc">::</span>vcount)</span>
 <span id="cb14-23"><a href="#cb14-23" tabindex="-1"></a><span class="fu">toc</span>()</span>
-<span id="cb14-24"><a href="#cb14-24" tabindex="-1"></a><span class="co">#&gt; Naive approach (all graphs): 0.076 sec elapsed</span></span>
+<span id="cb14-24"><a href="#cb14-24" tabindex="-1"></a><span class="co">#&gt; Naive approach (all graphs): 0.099 sec elapsed</span></span>
 <span id="cb14-25"><a href="#cb14-25" tabindex="-1"></a></span>
 <span id="cb14-26"><a href="#cb14-26" tabindex="-1"></a><span class="co"># Verify results are equivalent (though data types may differ)</span></span>
 <span id="cb14-27"><a href="#cb14-27" tabindex="-1"></a><span class="fu">all.equal</span>(vertex_counts_optimized, vertex_counts_naive)</span>
@@ -753,15 +753,15 @@ structures.</li>
 <span id="cb19-18"><a href="#cb19-18" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb19-19"><a href="#cb19-19" tabindex="-1"></a><span class="co">#&gt; other attached packages:</span></span>
 <span id="cb19-20"><a href="#cb19-20" tabindex="-1"></a><span class="co">#&gt; [1] tictoc_1.2.1   lobstr_1.2.1   dplyr_1.2.1    tibble_3.3.1   purrr_1.2.2   </span></span>
-<span id="cb19-21"><a href="#cb19-21" tabindex="-1"></a><span class="co">#&gt; [6] glyrepr_0.12.1</span></span>
+<span id="cb19-21"><a href="#cb19-21" tabindex="-1"></a><span class="co">#&gt; [6] glyrepr_0.13.0</span></span>
 <span id="cb19-22"><a href="#cb19-22" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb19-23"><a href="#cb19-23" tabindex="-1"></a><span class="co">#&gt; loaded via a namespace (and not attached):</span></span>
 <span id="cb19-24"><a href="#cb19-24" tabindex="-1"></a><span class="co">#&gt;  [1] jsonlite_2.0.0    compiler_4.6.0    tidyselect_1.2.1  stringr_1.6.0    </span></span>
 <span id="cb19-25"><a href="#cb19-25" tabindex="-1"></a><span class="co">#&gt;  [5] jquerylib_0.1.4   yaml_2.3.12       fastmap_1.2.0     R6_2.6.1         </span></span>
-<span id="cb19-26"><a href="#cb19-26" tabindex="-1"></a><span class="co">#&gt;  [9] generics_0.1.4    igraph_2.3.2      knitr_1.51        backports_1.5.1  </span></span>
+<span id="cb19-26"><a href="#cb19-26" tabindex="-1"></a><span class="co">#&gt;  [9] generics_0.1.4    igraph_2.3.3      knitr_1.51        backports_1.5.1  </span></span>
 <span id="cb19-27"><a href="#cb19-27" tabindex="-1"></a><span class="co">#&gt; [13] checkmate_2.3.4   rstackdeque_1.1.1 bslib_0.11.0      pillar_1.11.1    </span></span>
 <span id="cb19-28"><a href="#cb19-28" tabindex="-1"></a><span class="co">#&gt; [17] rlang_1.2.0       utf8_1.2.6        cachem_1.1.0      stringi_1.8.7    </span></span>
-<span id="cb19-29"><a href="#cb19-29" tabindex="-1"></a><span class="co">#&gt; [21] xfun_0.58         sass_0.4.10       otel_0.2.0        cli_3.6.6        </span></span>
+<span id="cb19-29"><a href="#cb19-29" tabindex="-1"></a><span class="co">#&gt; [21] xfun_0.59         sass_0.4.10       otel_0.2.0        cli_3.6.6        </span></span>
 <span id="cb19-30"><a href="#cb19-30" tabindex="-1"></a><span class="co">#&gt; [25] magrittr_2.0.5    digest_0.6.39     lifecycle_1.0.5   prettyunits_1.2.0</span></span>
 <span id="cb19-31"><a href="#cb19-31" tabindex="-1"></a><span class="co">#&gt; [29] vctrs_0.7.3       evaluate_1.0.5    glue_1.8.1        rmarkdown_2.31   </span></span>
 <span id="cb19-32"><a href="#cb19-32" tabindex="-1"></a><span class="co">#&gt; [33] tools_4.6.0       pkgconfig_2.0.3   htmltools_0.5.9</span></span></code></pre></div>
