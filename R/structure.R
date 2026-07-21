@@ -30,6 +30,7 @@
 #'     e.g., "2Ac", "3S"
 #'   - Multiple substituents separated by commas and ordered by position,
 #'     e.g., "3Me,4Ac", "2S,6P"
+#'   - Unknown substituent positions can be repeated, e.g., "?Me,?S"
 #'   - No substituents represented by empty string ""
 #'
 #' ## Edge Attributes
@@ -155,217 +156,34 @@ glycan_structure <- function(...) {
   processed_graphs <- purrr::map(valid_graphs, function(graph) {
     checkmate::assert_class(graph, "igraph")
     graph %>%
-      validate_single_glycan_structure() %>%
-      ensure_name_vertex_attr()
+      validate_glycan_graph() %>%
+      canonicalize_glycan_graph()
   })
 
-  # Reorder the graphs to align with IUPAC-style sequence
-  reordered_result <- reorder_graphs_with_indices(processed_graphs)
-  reordered_graphs <- reordered_result$graphs
-  reorder_indices <- reordered_result$indices
-
   # Validate that all structures have the same mono_type
-  validate_glycan_structure_vector(reordered_graphs)
+  validate_glycan_graph_vector(processed_graphs)
 
   # Use IUPAC codes directly as data for the glycan_structure vctrs vector
   processed_iupacs <- purrr::map_chr(
-    reordered_graphs,
-    .structure_to_iupac_single
+    processed_graphs,
+    graph_to_iupac
   )
 
   # Create a unique list based on uniqueness of IUPAC codes for structures storage
   unique_indices <- which(!duplicated(processed_iupacs))
-  unique_graphs <- reordered_graphs[unique_indices]
+  unique_graphs <- processed_graphs[unique_indices]
   unique_iupacs <- processed_iupacs[unique_indices]
   names(unique_graphs) <- unique_iupacs
 
   # Build final result - replace placeholders with actual IUPACs
   # Map reordered positions back to original positions
-  for (i in seq_along(reorder_indices)) {
-    orig_pos <- reorder_indices[i] # Original position in valid_graphs
-    final_pos <- valid_idx[orig_pos] # Final position in result vector
+  for (i in seq_along(processed_graphs)) {
+    final_pos <- valid_idx[i]
     iupac <- processed_iupacs[i]
     iupacs[final_pos] <- iupac
   }
 
   new_glycan_structure(iupacs, unique_graphs)
-}
-
-# Helper function to validate a single glycan structure
-validate_single_glycan_structure <- function(glycan) {
-  checkmate::assert_class(glycan, "igraph")
-
-  # Check if it is a directed graph
-  if (!is_directed_graph(glycan)) {
-    cli::cli_abort("Glycan structure must be directed.")
-  }
-
-  # Check if it is an out tree
-  if (!is_out_tree(glycan)) {
-    cli::cli_abort("Glycan structure must be an out tree.")
-  }
-
-  # Check if graph has a vertex attribute "mono"
-  # This is the monosaccharide name, e.g. "GlcNAc", "Man", etc.
-  if (!has_vertex_attrs(glycan, "mono")) {
-    cli::cli_abort("Glycan structure must have a vertex attribute 'mono'.")
-  }
-
-  # Check if no NA in vertex attribute "mono"
-  mono_names <- igraph::vertex_attr(glycan, "mono")
-  if (any(is.na(mono_names))) {
-    cli::cli_abort(
-      "Glycan structure must have no NA in vertex attribute 'mono'."
-    )
-  }
-
-  # Check if all monosaccharides are known
-  if (!all(is_known_mono(mono_names))) {
-    unknown_monos <- unique(igraph::V(glycan)$mono[
-      !is_known_mono(igraph::V(glycan)$mono)
-    ])
-    msg <- glue::glue(
-      "Unknown monosaccharide: {stringr::str_c(unknown_monos, collapse = ', ')}"
-    )
-    cli::cli_abort(msg, monos = unknown_monos)
-  }
-
-  # Check if mixed use of generic and concrete monosaccharides
-  if (mix_generic_concrete(mono_names)) {
-    cli::cli_abort(
-      "Monosaccharides must be either all generic or all concrete."
-    )
-  }
-
-  # Check if graph has a vertex attribute "sub"
-  # This is the substituent name, e.g. "Ac", "S", "P", or "" (no).
-  if (!has_vertex_attrs(glycan, "sub")) {
-    cli::cli_abort("Glycan structure must have a vertex attribute 'sub'.")
-  }
-
-  # Check if no NA in vertex attribute "sub"
-  subs <- igraph::vertex_attr(glycan, "sub")
-  if (any(is.na(subs))) {
-    cli::cli_abort(
-      "Glycan structure must have no NA in vertex attribute 'sub'."
-    )
-  }
-
-  # Check if all substituents are valid
-  if (!all(valid_substituent(subs))) {
-    invalid_subs <- unique(subs[!valid_substituent(subs)])
-    msg <- glue::glue(
-      "Unknown substituent: {stringr::str_c(invalid_subs, collapse = ', ')}"
-    )
-    cli::cli_abort(msg, subs = invalid_subs)
-  }
-
-  # Check if graph has an edge attribute "linkage"
-  if (!has_edge_attrs(glycan, "linkage")) {
-    cli::cli_abort("Glycan structure must have an edge attribute 'linkage'.")
-  }
-
-  # Check if no NA in edge attribute "linkage"
-  linkages <- igraph::edge_attr(glycan, "linkage")
-  if (any(is.na(linkages))) {
-    cli::cli_abort(
-      "Glycan structure must have no NA in edge attribute 'linkage'."
-    )
-  }
-
-  # Check if all linkages are valid
-  if (!all(valid_linkages(linkages))) {
-    invalid_linkages <- unique(linkages[!valid_linkages(linkages)])
-    msg <- glue::glue(
-      "Invalid linkage: {stringr::str_c(invalid_linkages, collapse = ', ')}"
-    )
-    cli::cli_abort(msg, linkages = invalid_linkages)
-  }
-
-  # Check if any duplicated linkage positions exist
-  if (any_dup_linkage_pos(glycan)) {
-    cli::cli_abort("Duplicated linkage positions.")
-  }
-
-  # Check if "anomer" attribute exists
-  if (is.null(glycan$anomer)) {
-    cli::cli_abort("Glycan structure must have a graph attribute 'anomer'.")
-  }
-
-  # Check if "anomer" attribute is valid
-  if (!valid_anomer(glycan$anomer)) {
-    cli::cli_abort(glue::glue("Invalid anomer: {glycan$anomer}"))
-  }
-
-  glycan
-}
-
-#' Validate that all structures in a vector have the same monosaccharide type
-#'
-#' This function checks that all glycan structures in a vector have the same
-#' monosaccharide type (either all generic or all concrete). Mixed types within
-#' a single vector are not allowed.
-#'
-#' @param graphs A list of igraph graph objects representing glycan structures.
-#' @param label A label for error messages (e.g., "Vector 1").
-#' @returns Invisible NULL. Throws an error if validation fails.
-#' @noRd
-validate_glycan_structure_vector <- function(graphs, label = NULL) {
-  # Skip if empty or single graph
-  if (length(graphs) <= 1) {
-    return(invisible(NULL))
-  }
-
-  # Get mono_type for each graph
-  mono_types <- purrr::map_chr(graphs, get_graph_mono_type)
-
-  # Check for mixed types within individual graphs
-  if (any(mono_types == "mixed")) {
-    cli::cli_abort(c(
-      "All structures must have a single monosaccharide type.",
-      "x" = "{.val {label}} contains structures with mixed generic and concrete monosaccharides."
-    ))
-  }
-
-  # Check that all structures have the same mono_type
-  unique_types <- unique(mono_types)
-  if (length(unique_types) > 1) {
-    concrete_count <- sum(mono_types == "concrete")
-    generic_count <- sum(mono_types == "generic")
-
-    if (is.null(label)) {
-      cli::cli_abort(c(
-        "All structures must have the same monosaccharide type.",
-        "x" = "Found {.val {concrete_count}} concrete and {.val {generic_count}} generic structure(s) in the same vector.",
-        "i" = "Use {.fn convert_to_generic} to convert concrete structures to generic type."
-      ))
-    } else {
-      cli::cli_abort(c(
-        "All structures must have the same monosaccharide type.",
-        "x" = "{.val {label}} has mixed types: {.val {concrete_count}} concrete and {.val {generic_count}} generic structure(s)."
-      ))
-    }
-  }
-
-  invisible(NULL)
-}
-
-#' Helper function to create a new glycan structure vector
-#' @param iupac A character vector of IUPAC-condensed strings.
-#' @param graphs A list of igraph objects.
-#' @returns A glyrepr_structure object (a vctrs vector object)
-#' @noRd
-new_glycan_structure <- function(iupac = character(), graphs = list()) {
-  nms <- names(iupac)
-  iupac <- unname(iupac)
-
-  out <- vctrs::new_vctr(
-    as.list(iupac),
-    graphs = graphs,
-    class = "glyrepr_structure"
-  )
-  names(out) <- nms
-  out
 }
 
 #' Extract stored IUPAC-condensed strings from a glycan structure vector
@@ -628,8 +446,8 @@ vec_ptype2.glyrepr_structure.glyrepr_structure <- function(x, y, ...) {
   graphs_y <- attr(y, "graphs")
 
   # Validate each vector separately
-  validate_glycan_structure_vector(graphs_x, label = "Vector 1")
-  validate_glycan_structure_vector(graphs_y, label = "Vector 2")
+  validate_glycan_graph_vector(graphs_x, label = "Vector 1")
+  validate_glycan_graph_vector(graphs_y, label = "Vector 2")
 
   # Check that both vectors have the same mono_type
   if (length(graphs_x) > 0 && length(graphs_y) > 0) {
@@ -742,15 +560,13 @@ glycan_structure_from_iupac_character <- function(x) {
 canonicalize_and_validate_iupac_graphs <- function(graphs) {
   graphs <- purrr::map(graphs, function(graph) {
     graph %>%
-      validate_single_glycan_structure() %>%
-      ensure_name_vertex_attr()
+      validate_glycan_graph() %>%
+      canonicalize_glycan_graph()
   })
 
-  reordered_result <- reorder_graphs_with_indices(graphs)
-  graphs <- reordered_result$graphs
-  validate_glycan_structure_vector(graphs)
+  validate_glycan_graph_vector(graphs)
 
-  iupacs <- purrr::map_chr(graphs, .structure_to_iupac_single)
+  iupacs <- purrr::map_chr(graphs, graph_to_iupac)
   unique_indices <- which(!duplicated(iupacs))
   unique_graphs <- graphs[unique_indices]
   names(unique_graphs) <- iupacs[unique_indices]
@@ -845,6 +661,12 @@ vec_restore.glyrepr_structure <- function(x, to, ...) {
 #'   Can be an igraph object, a list of igraph objects,
 #'   a character vector of IUPAC-condensed strings,
 #'   or an existing glyrepr_structure object.
+#' @param on_failure The failure policy for element-local parsing, validation,
+#'   and canonicalization errors. `"error"` preserves the default strict
+#'   behavior. `"na"` replaces failed elements with `NA` and emits one warning
+#'   that reports their positions and failure reasons. Existing missing elements
+#'   remain missing without a warning. Vector-level incompatibilities still
+#'   produce an error.
 #'
 #' @returns A glyrepr_structure object.
 #'
@@ -867,9 +689,233 @@ vec_restore.glyrepr_structure <- function(x, to, ...) {
 #' # Convert a character vector of IUPAC-condensed strings
 #' as_glycan_structure(c("GlcNAc(b1-4)GlcNAc(b1-", "Man(a1-2)GlcNAc(b1-"))
 #'
+#' # Preserve valid elements while replacing an invalid element with NA
+#' as_glycan_structure(
+#'   c(valid = "Glc(?1-", invalid = "not-a-structure"),
+#'   on_failure = "na"
+#' )
+#'
 #' @export
-as_glycan_structure <- function(x) {
+as_glycan_structure <- function(x, on_failure = c("error", "na")) {
+  on_failure <- rlang::arg_match(on_failure)
+
+  if (identical(on_failure, "error")) {
+    return(vctrs::vec_cast(x, glycan_structure()))
+  }
+
+  as_glycan_structure_with_na(x)
+}
+
+#' Convert to glycan structures with element-local failure recovery
+#'
+#' @param x An object accepted by [as_glycan_structure()].
+#' @returns A `glyrepr_structure` vector.
+#' @noRd
+as_glycan_structure_with_na <- function(x) {
+  if (inherits(x, "glyrepr_structure")) {
+    return(vctrs::vec_cast(x, glycan_structure()))
+  }
+
+  if (is.character(x)) {
+    return(glycan_structure_from_iupac_character_with_na(x))
+  }
+
+  if (inherits(x, "igraph")) {
+    return(glycan_structure_from_graph_list_with_na(list(x)))
+  }
+
+  if (is.list(x)) {
+    return(glycan_structure_from_graph_list_with_na(x))
+  }
+
   vctrs::vec_cast(x, glycan_structure())
+}
+
+#' Recover valid glycan structures from a graph list
+#'
+#' @param x A list containing igraph objects and missing values.
+#' @returns A `glyrepr_structure` vector.
+#' @noRd
+glycan_structure_from_graph_list_with_na <- function(x) {
+  missing <- vapply(x, is_missing_structure_input, logical(1))
+  is_graph <- vapply(x, inherits, logical(1), what = "igraph")
+  invalid_positions <- which(!missing & !is_graph)
+
+  if (length(invalid_positions) > 0) {
+    cli::cli_abort(c(
+      "All elements in the list must be igraph objects or missing values.",
+      "x" = "Invalid element position{?s}: {.val {invalid_positions}}."
+    ))
+  }
+
+  positions <- as.list(which(!missing))
+  recover_glycan_structure_elements(
+    elements = x[!missing],
+    positions = positions,
+    size = length(x),
+    input_names = names(x),
+    parser = identity
+  )
+}
+
+#' Recover valid glycan structures from character input
+#'
+#' @param x A character vector of IUPAC-condensed strings.
+#' @returns A `glyrepr_structure` vector.
+#' @noRd
+glycan_structure_from_iupac_character_with_na <- function(x) {
+  non_missing <- which(!is.na(x))
+
+  if (length(non_missing) == 0) {
+    out <- new_na_glycan_structure(length(x))
+    names(out) <- names(x)
+    return(out)
+  }
+
+  unique_x <- unique(x[non_missing])
+  groups <- match(x, unique_x)
+  positions <- lapply(seq_along(unique_x), function(i) which(groups == i))
+
+  recover_glycan_structure_elements(
+    elements = as.list(unique_x),
+    positions = positions,
+    size = length(x),
+    input_names = names(x),
+    parser = .parse_iupac_condensed_single
+  )
+}
+
+#' Process elements independently and recover valid glycan structures
+#'
+#' @param elements A list of graph objects or character strings.
+#' @param positions A list mapping each element to its original positions.
+#' @param size The size of the output vector.
+#' @param input_names Names for the output vector.
+#' @param parser A function that converts one element to an igraph object.
+#' @returns A `glyrepr_structure` vector.
+#' @noRd
+recover_glycan_structure_elements <- function(
+  elements,
+  positions,
+  size,
+  input_names,
+  parser
+) {
+  outcomes <- lapply(elements, function(element) {
+    tryCatch(
+      process_glycan_structure_element(parser(element)),
+      error = function(cnd) cnd
+    )
+  })
+  failed <- vapply(outcomes, inherits, logical(1), what = "error")
+  successful <- outcomes[!failed]
+
+  successful_graphs <- lapply(successful, `[[`, "graph")
+  validate_glycan_graph_vector(successful_graphs)
+
+  result_iupacs <- rep(NA_character_, size)
+  successful_positions <- positions[!failed]
+  successful_iupacs <- vapply(successful, `[[`, character(1), "iupac")
+  for (i in seq_along(successful_positions)) {
+    result_iupacs[successful_positions[[i]]] <- successful_iupacs[[i]]
+  }
+
+  unique_graphs <- successful_graphs[!duplicated(successful_iupacs)]
+  names(unique_graphs) <- unique(successful_iupacs)
+  out <- new_glycan_structure(result_iupacs, unique_graphs)
+  names(out) <- input_names
+
+  if (any(failed)) {
+    failure_positions <- unlist(positions[failed], use.names = FALSE)
+    failure_reasons <- unlist(
+      Map(
+        function(outcome, element_positions) {
+          rep(
+            normalize_structure_failure_reason(outcome),
+            length(element_positions)
+          )
+        },
+        outcomes[failed],
+        positions[failed]
+      ),
+      use.names = FALSE
+    )
+    failure_order <- order(failure_positions)
+    warn_structure_failures(
+      positions = failure_positions[failure_order],
+      reasons = failure_reasons[failure_order],
+      input_names = input_names
+    )
+  }
+
+  out
+}
+
+#' Validate and canonicalize one glycan graph
+#'
+#' @param graph An igraph object.
+#' @returns A list containing the canonical graph and IUPAC string.
+#' @noRd
+process_glycan_structure_element <- function(graph) {
+  graph <- validate_glycan_graph(graph)
+  graph <- canonicalize_glycan_graph(graph)
+
+  list(
+    graph = graph,
+    iupac = graph_to_iupac(graph)
+  )
+}
+
+#' Test whether a graph-list element represents a missing structure
+#'
+#' @param x A graph-list element.
+#' @returns A logical scalar.
+#' @noRd
+is_missing_structure_input <- function(x) {
+  is.null(x) || (is.atomic(x) && length(x) == 1 && is.na(x))
+}
+
+#' Normalize an element-local failure reason
+#'
+#' @param cnd An error condition.
+#' @returns A one-line character scalar.
+#' @noRd
+normalize_structure_failure_reason <- function(cnd) {
+  reason <- conditionMessage(cnd)
+  reason <- stringr::str_replace_all(reason, "\\s*\\n\\s*", " ")
+  stringr::str_squish(reason)
+}
+
+#' Warn about structures replaced with missing values
+#'
+#' @param positions Integer positions of failed elements.
+#' @param reasons Character failure reasons.
+#' @param input_names Optional names of the input elements.
+#' @returns Nothing. Called for its warning side effect.
+#' @noRd
+warn_structure_failures <- function(positions, reasons, input_names = NULL) {
+  n_failed <- length(positions)
+  labels <- as.character(positions)
+
+  if (!is.null(input_names)) {
+    failed_names <- input_names[positions]
+    has_name <- !is.na(failed_names) & nzchar(failed_names)
+    labels[has_name] <- paste0(
+      labels[has_name],
+      " (`",
+      failed_names[has_name],
+      "`)"
+    )
+  }
+
+  failure_details <- paste0("Position ", labels, ": ", reasons)
+  cli::cli_warn(
+    c(
+      "{n_failed} structure{?s} failed validation and {?was/were} replaced with {.code NA}.",
+      "x" = "{failure_details}"
+    ),
+    class = "glyrepr_warning_structure_failure"
+  )
 }
 
 #' Access Individual Glycan Structures
