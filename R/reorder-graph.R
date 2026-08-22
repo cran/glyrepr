@@ -25,10 +25,69 @@ reorder_graphs_with_indices <- function(graphs) {
 }
 
 .reorder_one_graph <- function(graph) {
-  root <- which(igraph::degree(graph, mode = "in") == 0)
-  seq_cache <- build_seq_cache(graph, root)
+  has_metadata_attr <- any(
+    c(
+      "floating_parts",
+      "floating_substituents"
+    ) %in%
+      igraph::graph_attr_names(graph)
+  )
+  if (has_metadata_attr) {
+    if (has_floating_metadata(graph)) {
+      return(canonicalize_floating_graph(graph))
+    }
+    graph <- delete_floating_parts_attr(graph)
+    graph <- delete_floating_substituents_attr(graph)
+  }
+
+  seq_cache <- build_seq_cache(graph)
+  root <- seq_cache$root
   order <- seq_glycan_order(root, seq_cache)
+  if (is_canonical_sequence_order(order)) {
+    return(graph)
+  }
+
   .reorder_by_sequence_order(graph, order)
+}
+
+is_canonical_sequence_order <- function(sequence_order) {
+  vertex_order <- as.numeric(sequence_order$vertices)
+  edge_order <- as.numeric(sequence_order$edges)
+
+  identical(base::order(vertex_order), seq_along(vertex_order)) &&
+    identical(edge_order, as.numeric(seq_along(edge_order)))
+}
+
+canonicalize_graph_with_iupac <- function(graph) {
+  graph <- normalize_alditol_attr(graph)
+  if (
+    any(
+      c(
+        "floating_parts",
+        "floating_substituents"
+      ) %in%
+        igraph::graph_attr_names(graph)
+    )
+  ) {
+    graph <- canonicalize_glycan_graph(graph)
+    return(list(graph = graph, iupac = graph_to_iupac(graph)))
+  }
+
+  graph <- ensure_name_vertex_attr(graph)
+  canonical_names <- as.character(seq_len(igraph::vcount(graph)))
+  if (!identical(igraph::V(graph)$name, canonical_names)) {
+    igraph::V(graph)$name <- canonical_names
+  }
+
+  seq_cache <- build_seq_cache(graph)
+  root <- seq_cache$root
+  sequence <- seq_glycan_order_iupac(root, seq_cache)
+  iupac <- format_reducing_end_iupac(sequence$iupac, graph)
+  if (!is_canonical_sequence_order(sequence)) {
+    graph <- .reorder_by_sequence_order(graph, sequence)
+  }
+
+  list(graph = graph, iupac = iupac)
 }
 
 .reorder_by_sequence_order <- function(graph, sequence_order) {
@@ -41,6 +100,7 @@ reorder_graphs_with_indices <- function(graphs) {
 }
 
 .permute_edges <- function(g, order) {
+  graph_attrs <- igraph::graph_attr(g)
   edges <- igraph::as_data_frame(g, what = "edges")
   verts <- igraph::as_data_frame(g, what = "vertices")
   edges <- edges[order, , drop = FALSE]
@@ -58,6 +118,12 @@ reorder_graphs_with_indices <- function(graphs) {
     directed = igraph::is_directed(g),
     vertices = verts
   )
-  new_g$anomer <- g$anomer
+  for (attr_name in names(graph_attrs)) {
+    new_g <- igraph::set_graph_attr(
+      new_g,
+      attr_name,
+      value = graph_attrs[[attr_name]]
+    )
+  }
   new_g
 }

@@ -30,7 +30,8 @@ and the remaining elements are vectors of the same length or length 1 (will be r
 
 \item{.f}{A function that takes an igraph object (from first element of \code{.l}) and
 values from other elements, returning a result.
-Can be a function, purrr-style lambda (\code{~ .x + .y + .z}), or a character string naming a function.}
+Can be a function, purrr-style lambda (\code{~ .x + .y + .z}), or a character string naming a function.
+A structure with floating metadata is passed as one annotated graph.}
 
 \item{...}{Additional arguments passed to \code{.f}.}
 
@@ -53,6 +54,11 @@ Similar to purrr pmap functions, but optimized for glycan structure vectors.
 \details{
 These functions only compute \code{.f} once for each unique combination of structure and corresponding
 values from other vectors, then map the results back to the original vector positions.
+
+\code{spmap_structure()} reuses unchanged graphs and validates and canonicalizes
+changed graphs returned by \code{.f}. A callback that changes vertex identities
+or components of a floating structure must also update its \code{floating_parts}
+and \code{floating_substituents} metadata.
 
 \strong{NA Handling:}
 NA elements in the first argument (glycan structure vector) are preserved in the output.

@@ -58,6 +58,31 @@ test_that("count_mono works for compositions with special monosaccharides", {
   expect_equal(count_mono(comp, "Glc"), NA_integer_)
 })
 
+test_that("generic counts include furanose concrete forms", {
+  furanose <- unname(furanose_monosaccharides)
+  generic <- convert_to_generic(furanose)
+  comp <- glycan_composition(stats::setNames(
+    rep(1L, length(furanose)),
+    furanose
+  ))
+
+  expect_identical(count_mono(comp), length(furanose))
+  for (mono in unique(generic)) {
+    expect_identical(count_mono(comp, mono), sum(generic == mono))
+  }
+})
+
+test_that("counts distinguish configurations and aggregate generic classes", {
+  comp <- glycan_composition(c(Fuc = 1, `D-Fuc` = 2, Gul = 3, `L-Gul` = 4))
+
+  expect_identical(count_mono(comp, "Fuc"), 1L)
+  expect_identical(count_mono(comp, "D-Fuc"), 2L)
+  expect_identical(count_mono(comp, "Gul"), 3L)
+  expect_identical(count_mono(comp, "L-Gul"), 4L)
+  expect_identical(count_mono(comp, "dHex"), 3L)
+  expect_identical(count_mono(comp, "Hex"), 7L)
+})
+
 test_that("count_mono works when counting generic in concrete compositions", {
   # When mono is generic, it should count all matching concrete monos
   comp <- glycan_composition(c(
@@ -78,6 +103,21 @@ test_that("count_mono works when counting generic in concrete compositions", {
 test_that("count_mono returns NA when counting concrete in generic compositions", {
   comp <- glycan_composition(c(Hex = 2, HexNAc = 1))
   expect_equal(count_mono(comp, "GalNAc"), NA_integer_)
+})
+
+test_that("count_mono is conservative for mixed compositions", {
+  comp <- glycan_composition(c(Hex = 2, Gal = 1, HexNAc = 1))
+
+  expect_identical(count_mono(comp, "Gal"), NA_integer_)
+  expect_identical(count_mono(comp, "Hex"), 3L)
+  expect_identical(count_mono(comp), 4L)
+})
+
+test_that("count_mono is conservative for mixed structures", {
+  structure <- as_glycan_structure("Hex(b1-3)Gal(a1-")
+
+  expect_identical(count_mono(structure, "Gal"), NA_integer_)
+  expect_identical(count_mono(structure, "Hex"), 2L)
 })
 
 test_that("count_mono works with multiple compositions", {
@@ -160,6 +200,16 @@ test_that("count_mono works with glycan structures", {
   struct2 <- glycan_structure(graph2)
   expect_equal(count_mono(struct2, "Hex"), 3) # Count Glc, Gal, Man
   expect_equal(count_mono(struct2, "HexNAc"), 1) # Count GlcNAc
+})
+
+test_that("count_mono works with a glycan graph", {
+  structure <- as_glycan_structure("Gal3Me6S(b1-3)GalNAc(a1-")
+  graph <- get_structure_graphs(structure)
+
+  expect_identical(count_mono(graph), 2L)
+  expect_identical(count_mono(graph, include_subs = TRUE), 4L)
+  expect_identical(count_mono(graph, "HexNAc"), 1L)
+  expect_identical(count_mono(graph, "S"), 1L)
 })
 
 test_that("count_mono works with multiple structures", {

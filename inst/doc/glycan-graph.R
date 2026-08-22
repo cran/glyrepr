@@ -38,6 +38,30 @@ igraph::E(graph3)$linkage
 graph$anomer
 
 ## -----------------------------------------------------------------------------
+alditol <- as_glycan_structure("Gal(b1-4)GlcNAc-ol(a1-")
+alditol_graph <- get_structure_graphs(alditol)
+alditol_graph$alditol
+get_alditol(alditol)
+
+## -----------------------------------------------------------------------------
+floating <- as_glycan_structure(
+  "{Neu5Ac(a2-3)|2,3}Gal(b1-3)[Gal(b1-4)]GlcNAc(a1-"
+)
+floating_graph <- get_structure_graphs(floating)
+
+igraph::components(floating_graph, mode = "weak")$no
+igraph::graph_attr(floating_graph, "floating_parts")
+structure_floating_parts(floating)
+
+## -----------------------------------------------------------------------------
+floating_sub <- as_glycan_structure(
+  "{6S|1,2}Gal(a1-3)Glc(a1-3)Man(a1-"
+)
+floating_sub_graph <- get_structure_graphs(floating_sub)
+igraph::graph_attr(floating_sub_graph, "floating_substituents")
+structure_floating_substituents(floating_sub)
+
+## -----------------------------------------------------------------------------
 sum(igraph::degree(graph, mode = "out") > 1)
 
 ## -----------------------------------------------------------------------------

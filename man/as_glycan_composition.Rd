@@ -13,6 +13,7 @@ Supported inputs include:
 \item Named integer vectors or lists of named integer vectors
 \item Character vectors with composition strings (e.g., "Hex(5)HexNAc(2)")
 \item \code{glyrepr_structure} objects (counts both monosaccharides and substituents)
+\item Glycan \code{igraph} objects (returns a length-one composition vector)
 \item Existing \code{glyrepr_composition} objects (returned as-is)
 }}
 }
@@ -28,8 +29,9 @@ to \code{\link[=glycan_composition]{glycan_composition()}}.
 This function uses the vctrs casting framework for type conversion.
 When converting from glycan structures, both monosaccharides and substituents
 are counted. Substituents are extracted from the \code{sub} attribute of each
-vertex in the structure. For example, a vertex with \code{sub = "3Me"}
-contributes one "Me" substituent to the composition.
+vertex and from the \code{floating_substituents} graph attribute. For example, a
+vertex with \code{sub = "3Me"} or an unresolved \code{{?Me}} each contributes one
+"Me" substituent to the composition.
 
 Simple composition strings use one-letter residue codes: "H" for "Hex",
 "N" for "HexNAc", "F" for "dHex", "S"/"A" for "NeuAc", and "G" for
@@ -54,8 +56,10 @@ as_glycan_composition(c("H5N2", "H5N4S1F1"))
 comp <- glycan_composition(c(Hex = 5, HexNAc = 2))
 as_glycan_composition(comp)
 
-# From a glycan structure vector
+# From a glycan structure vector or graph
 strucs <- c(n_glycan_core(), o_glycan_core_1())
 as_glycan_composition(strucs)
+graph <- get_structure_graphs(strucs[[1]])
+as_glycan_composition(graph)
 
 }

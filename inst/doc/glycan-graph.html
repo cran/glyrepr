@@ -350,9 +350,11 @@ companion reference.</p>
 <div id="glycans-as-graphs" class="section level2">
 <h2>Glycans as Graphs</h2>
 <p>Glycans are naturally represented as directed graphs. In
-<code>glyrepr</code>, a glycan structure is stored as an
+<code>glyrepr</code>, an ordinary glycan structure is stored as an
 outward-directed tree, where each vertex represents a monosaccharide and
-each edge represents a glycosidic linkage.</p>
+each edge represents a glycosidic linkage. A structure with floating
+parts is stored as an annotated forest: one main tree plus one
+disconnected tree for each floating part.</p>
 <p>Behind the scenes, each <code>glycan_structure()</code> object is
 backed by an <code>igraph</code> object. Most workflows can stay at the
 <code>glycan_structure()</code> level, but the graph representation is
@@ -385,10 +387,11 @@ with <code>get_structure_graphs()</code>:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>glycan <span class="ot">&lt;-</span> <span class="fu">n_glycan_core</span>()</span>
 <span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>graph <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(glycan)</span>
 <span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>graph</span>
-<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="co">#&gt; IGRAPH 4f1a69f DN-- 5 4 -- </span></span>
-<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co">#&gt; + attr: anomer (g/c), name (v/c), mono (v/c), sub (v/c), linkage (e/c)</span></span>
-<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt; + edges from 4f1a69f (vertex names):</span></span>
-<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt; [1] 3-&gt;1 3-&gt;2 4-&gt;3 5-&gt;4</span></span></code></pre></div>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="co">#&gt; IGRAPH c72b0f3 DN-- 5 4 -- </span></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co">#&gt; + attr: anomer (g/c), alditol (g/l), name (v/c), mono (v/c), sub (v/c),</span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt; | linkage (e/c)</span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt; + edges from c72b0f3 (vertex names):</span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt; [1] 3-&gt;1 3-&gt;2 4-&gt;3 5-&gt;4</span></span></code></pre></div>
 <p>The printed graph contains several pieces of information.</p>
 <p><strong>First line:</strong> Directed Named (“DN”) graph with 5
 vertices (sugar units) and 4 edges (bonds).</p>
@@ -396,6 +399,12 @@ vertices (sugar units) and 4 edges (bonds).</p>
 <ul>
 <li><code>anomer</code>: the anomeric configuration of the reducing
 end.</li>
+<li><code>alditol</code>: whether the reducing-end residue is an
+alditol.</li>
+<li><code>floating_parts</code>, when present: virtual attachment
+metadata for disconnected floating components.</li>
+<li><code>floating_substituents</code>, when present: unresolved
+substituent tokens and their candidate parent residues.</li>
 </ul>
 <p><strong>Vertex attributes:</strong></p>
 <ul>
@@ -467,6 +476,96 @@ notation, for example “Neu5Ac with an a2-3 linkage”.</p>
 end.</p>
 <div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>graph<span class="sc">$</span>anomer</span>
 <span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a><span class="co">#&gt; [1] &quot;b1&quot;</span></span></code></pre></div>
+<p><strong>Alditol:</strong> Whether the reducing-end residue has been
+reduced. The attribute is always explicit on canonical graphs; legacy
+inputs without it are treated as <code>FALSE</code>. In IUPAC-condensed
+strings, <code>-ol</code> follows the reducing-end residue.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>alditol <span class="ot">&lt;-</span> <span class="fu">as_glycan_structure</span>(<span class="st">&quot;Gal(b1-4)GlcNAc-ol(a1-&quot;</span>)</span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>alditol_graph <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(alditol)</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>alditol_graph<span class="sc">$</span>alditol</span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a><span class="fu">get_alditol</span>(alditol)</span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+</div>
+<div id="floating-parts" class="section level3">
+<h3>Floating Parts</h3>
+<p>A floating structure remains one <code>igraph</code>, but it is
+weakly disconnected. The floating-component vertices come first in
+complete IUPAC-condensed order, followed by the main-tree vertices in
+their canonical order.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>floating <span class="ot">&lt;-</span> <span class="fu">as_glycan_structure</span>(</span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>  <span class="st">&quot;{Neu5Ac(a2-3)|2,3}Gal(b1-3)[Gal(b1-4)]GlcNAc(a1-&quot;</span></span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>)</span>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>floating_graph <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(floating)</span>
+<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a></span>
+<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a>igraph<span class="sc">::</span><span class="fu">components</span>(floating_graph, <span class="at">mode =</span> <span class="st">&quot;weak&quot;</span>)<span class="sc">$</span>no</span>
+<span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a><span class="co">#&gt; [1] 2</span></span>
+<span id="cb12-8"><a href="#cb12-8" tabindex="-1"></a>igraph<span class="sc">::</span><span class="fu">graph_attr</span>(floating_graph, <span class="st">&quot;floating_parts&quot;</span>)</span>
+<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a><span class="co">#&gt; [[1]]</span></span>
+<span id="cb12-10"><a href="#cb12-10" tabindex="-1"></a><span class="co">#&gt; [[1]]$root</span></span>
+<span id="cb12-11"><a href="#cb12-11" tabindex="-1"></a><span class="co">#&gt; [1] 1</span></span>
+<span id="cb12-12"><a href="#cb12-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb12-13"><a href="#cb12-13" tabindex="-1"></a><span class="co">#&gt; [[1]]$nodes</span></span>
+<span id="cb12-14"><a href="#cb12-14" tabindex="-1"></a><span class="co">#&gt; [1] 1</span></span>
+<span id="cb12-15"><a href="#cb12-15" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb12-16"><a href="#cb12-16" tabindex="-1"></a><span class="co">#&gt; [[1]]$linkage</span></span>
+<span id="cb12-17"><a href="#cb12-17" tabindex="-1"></a><span class="co">#&gt; [1] &quot;a2-3&quot;</span></span>
+<span id="cb12-18"><a href="#cb12-18" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb12-19"><a href="#cb12-19" tabindex="-1"></a><span class="co">#&gt; [[1]]$parents</span></span>
+<span id="cb12-20"><a href="#cb12-20" tabindex="-1"></a><span class="co">#&gt; [1] 2 3</span></span>
+<span id="cb12-21"><a href="#cb12-21" tabindex="-1"></a><span class="fu">structure_floating_parts</span>(floating)</span>
+<span id="cb12-22"><a href="#cb12-22" tabindex="-1"></a><span class="co">#&gt; # A tibble: 1 × 6</span></span>
+<span id="cb12-23"><a href="#cb12-23" tabindex="-1"></a><span class="co">#&gt;   glycan_id part_id root_node nodes     linkage parents  </span></span>
+<span id="cb12-24"><a href="#cb12-24" tabindex="-1"></a><span class="co">#&gt;       &lt;int&gt;   &lt;int&gt;     &lt;int&gt; &lt;list&gt;    &lt;chr&gt;   &lt;list&gt;   </span></span>
+<span id="cb12-25"><a href="#cb12-25" tabindex="-1"></a><span class="co">#&gt; 1         1       1         1 &lt;int [1]&gt; a2-3    &lt;int [2]&gt;</span></span></code></pre></div>
+<p>Each <code>floating_parts</code> entry has four fields:</p>
+<ul>
+<li><code>root</code>: the vertex index at the root of the floating
+component.</li>
+<li><code>nodes</code>: every vertex index in the floating
+component.</li>
+<li><code>linkage</code>: the virtual linkage from that root to its
+unresolved parent.</li>
+<li><code>parents</code>: candidate vertex indices outside the
+component. <code>integer()</code> means all feasible nodes outside that
+component, including nodes in other floating parts. In a canonical
+structure, an explicit vector has at least two entries; a singleton is
+normalized to an ordinary edge.</li>
+</ul>
+<p>These IDs follow complete IUPAC-condensed residue order: floating
+blocks are counted from left to right before the main glycan, and
+substituent blocks add no vertices. Component assignments must be
+acyclic and ultimately connect to the main tree.</p>
+<p>The virtual attachment is not stored in
+<code>igraph::E(floating_graph)</code>, because its endpoint is
+unresolved. Use <code>structure_floating_parts()</code> when a tabular
+representation must round-trip this metadata.</p>
+</div>
+<div id="floating-substituents" class="section level3">
+<h3>Floating Substituents</h3>
+<p>Floating substituents use the same candidate-parent convention
+without adding dummy vertices. Each <code>floating_substituents</code>
+entry contains <code>substituent</code>, such as <code>&quot;6S&quot;</code> or
+<code>&quot;?S&quot;</code>, and <code>parents</code>. Empty <code>parents</code>
+means every feasible residue node in the complete structure, including
+floating-part nodes; otherwise the values are global graph vertex
+indices.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a>floating_sub <span class="ot">&lt;-</span> <span class="fu">as_glycan_structure</span>(</span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a>  <span class="st">&quot;{6S|1,2}Gal(a1-3)Glc(a1-3)Man(a1-&quot;</span></span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a>)</span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a>floating_sub_graph <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(floating_sub)</span>
+<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a>igraph<span class="sc">::</span><span class="fu">graph_attr</span>(floating_sub_graph, <span class="st">&quot;floating_substituents&quot;</span>)</span>
+<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a><span class="co">#&gt; [[1]]</span></span>
+<span id="cb13-7"><a href="#cb13-7" tabindex="-1"></a><span class="co">#&gt; [[1]]$substituent</span></span>
+<span id="cb13-8"><a href="#cb13-8" tabindex="-1"></a><span class="co">#&gt; [1] &quot;6S&quot;</span></span>
+<span id="cb13-9"><a href="#cb13-9" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb13-10"><a href="#cb13-10" tabindex="-1"></a><span class="co">#&gt; [[1]]$parents</span></span>
+<span id="cb13-11"><a href="#cb13-11" tabindex="-1"></a><span class="co">#&gt; [1] 1 2</span></span>
+<span id="cb13-12"><a href="#cb13-12" tabindex="-1"></a><span class="fu">structure_floating_substituents</span>(floating_sub)</span>
+<span id="cb13-13"><a href="#cb13-13" tabindex="-1"></a><span class="co">#&gt; # A tibble: 1 × 4</span></span>
+<span id="cb13-14"><a href="#cb13-14" tabindex="-1"></a><span class="co">#&gt;   glycan_id substituent_id substituent parents  </span></span>
+<span id="cb13-15"><a href="#cb13-15" tabindex="-1"></a><span class="co">#&gt;       &lt;int&gt;          &lt;int&gt; &lt;chr&gt;       &lt;list&gt;   </span></span>
+<span id="cb13-16"><a href="#cb13-16" tabindex="-1"></a><span class="co">#&gt; 1         1              1 6S          &lt;int [2]&gt;</span></span></code></pre></div>
 </div>
 </div>
 <div id="working-with-the-graph" class="section level2">
@@ -474,31 +573,35 @@ end.</p>
 <div id="using-igraph" class="section level3">
 <h3>Using <code>igraph</code></h3>
 <p>Once you understand the graph structure, you can use
-<code>igraph</code> functions for custom structure analysis.</p>
+<code>igraph</code> functions for custom structure analysis. Remember
+that tree-specific functions need special handling for a structure with
+floating parts: <code>get_structure_graphs()</code> and
+<code>smap()</code> pass the complete annotated forest, not only the
+main tree.</p>
 <p><strong>Example 1:</strong> Count branched structures (sugars with
 multiple children):</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="fu">sum</span>(igraph<span class="sc">::</span><span class="fu">degree</span>(graph, <span class="at">mode =</span> <span class="st">&quot;out&quot;</span>) <span class="sc">&gt;</span> <span class="dv">1</span>)</span>
-<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a><span class="co">#&gt; [1] 1</span></span></code></pre></div>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="fu">sum</span>(igraph<span class="sc">::</span><span class="fu">degree</span>(graph, <span class="at">mode =</span> <span class="st">&quot;out&quot;</span>) <span class="sc">&gt;</span> <span class="dv">1</span>)</span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a><span class="co">#&gt; [1] 1</span></span></code></pre></div>
 <p><strong>Example 2:</strong> Explore the structure with breadth-first
 search:</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>bfs_result <span class="ot">&lt;-</span> igraph<span class="sc">::</span><span class="fu">bfs</span>(graph, <span class="at">root =</span> <span class="dv">1</span>, <span class="at">mode =</span> <span class="st">&quot;out&quot;</span>)</span>
-<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>bfs_result<span class="sc">$</span>order</span>
-<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a><span class="co">#&gt; + 5/5 vertices, named, from 4f1a69f:</span></span>
-<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a><span class="co">#&gt; [1] 1 2 3 4 5</span></span></code></pre></div>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a>bfs_result <span class="ot">&lt;-</span> igraph<span class="sc">::</span><span class="fu">bfs</span>(graph, <span class="at">root =</span> <span class="dv">1</span>, <span class="at">mode =</span> <span class="st">&quot;out&quot;</span>)</span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a>bfs_result<span class="sc">$</span>order</span>
+<span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a><span class="co">#&gt; + 5/5 vertices, named, from c72b0f3:</span></span>
+<span id="cb15-4"><a href="#cb15-4" tabindex="-1"></a><span class="co">#&gt; [1] 1 2 3 4 5</span></span></code></pre></div>
 </div>
 <div id="using-smap-functions" class="section level3">
 <h3>Using <code>smap</code> Functions</h3>
 <p>Working with multiple glycans? You could use <code>purrr</code>:</p>
-<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="fu">library</span>(purrr)</span>
-<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a></span>
-<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a>glycans <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">n_glycan_core</span>(), <span class="fu">o_glycan_core_1</span>(), <span class="fu">o_glycan_core_2</span>())</span>
-<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a>graphs <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(glycans)  <span class="co"># Extract graphs first</span></span>
-<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a><span class="fu">map_int</span>(graphs, <span class="sc">~</span> igraph<span class="sc">::</span><span class="fu">vcount</span>(.x))    <span class="co"># Then analyze</span></span>
-<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a><span class="co">#&gt; [1] 5 2 3</span></span></code></pre></div>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="fu">library</span>(purrr)</span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a></span>
+<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a>glycans <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">n_glycan_core</span>(), <span class="fu">o_glycan_core_1</span>(), <span class="fu">o_glycan_core_2</span>())</span>
+<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a>graphs <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(glycans)  <span class="co"># Extract graphs first</span></span>
+<span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a><span class="fu">map_int</span>(graphs, <span class="sc">~</span> igraph<span class="sc">::</span><span class="fu">vcount</span>(.x))    <span class="co"># Then analyze</span></span>
+<span id="cb16-6"><a href="#cb16-6" tabindex="-1"></a><span class="co">#&gt; [1] 5 2 3</span></span></code></pre></div>
 <p>For glycan structure vectors, <code>glyrepr</code>’s
 <code>smap</code> functions are usually a better fit:</p>
-<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="fu">smap_int</span>(glycans, <span class="sc">~</span> igraph<span class="sc">::</span><span class="fu">vcount</span>(.x))  <span class="co"># Direct analysis, no intermediate step.</span></span>
-<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a><span class="co">#&gt; [1] 5 2 3</span></span></code></pre></div>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a><span class="fu">smap_int</span>(glycans, <span class="sc">~</span> igraph<span class="sc">::</span><span class="fu">vcount</span>(.x))  <span class="co"># Direct analysis, no intermediate step.</span></span>
+<span id="cb17-2"><a href="#cb17-2" tabindex="-1"></a><span class="co">#&gt; [1] 5 2 3</span></span></code></pre></div>
 <p>The main advantage of <code>smap</code> functions is how they handle
 duplicates. Real datasets often contain many repeated structures, and
 <code>smap</code> optimizes by processing unique structures once, then

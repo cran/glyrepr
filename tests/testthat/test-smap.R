@@ -960,6 +960,136 @@ test_that("spmap_structure correctly updates unique structures count when modifi
   expect_equal(as.character(result)[1], "Gal(??-?)GalNAc(??-")
 })
 
+test_that("structure mappers recanonicalize floating candidate indices", {
+  glycan <- as_glycan_structure(
+    "{Neu5Ac(a2-4)|3,4}Fuc(a1-2)[Gal(a1-3)]Man(a1-"
+  )
+  strip_tree_linkages <- function(graph, ...) {
+    graph <- igraph::set_edge_attr(graph, "linkage", value = "??-?")
+    igraph::set_graph_attr(graph, "anomer", value = "??")
+  }
+
+  results <- list(
+    smap = smap_structure(glycan, strip_tree_linkages),
+    smap2 = smap2_structure(glycan, 1, strip_tree_linkages),
+    spmap = spmap_structure(list(glycan, 1), strip_tree_linkages),
+    simap = simap_structure(glycan, strip_tree_linkages)
+  )
+
+  purrr::walk(results, function(result) {
+    expect_identical(
+      as.character(result),
+      "{Neu5Ac(a2-4)|2,4}Gal(??-?)[Fuc(??-?)]Man(??-"
+    )
+    expect_identical(
+      structure_floating_parts(result)$parents[[1]],
+      c(2L, 4L)
+    )
+  })
+})
+
+test_that("structure mappers preserve cross-component parent relations", {
+  glycan <- as_glycan_structure(
+    paste0(
+      "{?S|1,3}",
+      "{Fuc(a1-2)|2,3}",
+      "{Man(a1-3)|1,3}",
+      "Glc(a1-"
+    )
+  )
+  permute_forest <- function(graph, ...) {
+    igraph::V(graph)$source_id <- seq_len(igraph::vcount(graph))
+    graph <- igraph::permute(graph, rev(seq_len(igraph::vcount(graph))))
+    old_to_new <- match(
+      seq_len(igraph::vcount(graph)),
+      igraph::V(graph)$source_id
+    )
+    parts <- purrr::map(graph$floating_parts, function(part) {
+      part$root <- as.integer(old_to_new[part$root])
+      part$nodes <- sort(as.integer(old_to_new[part$nodes]))
+      part$parents <- sort(as.integer(old_to_new[part$parents]))
+      part
+    })
+    substituents <- purrr::map(
+      graph$floating_substituents,
+      function(substituent) {
+        substituent$parents <- sort(as.integer(
+          old_to_new[substituent$parents]
+        ))
+        substituent
+      }
+    )
+    graph <- set_floating_parts_attr(graph, parts)
+    graph <- set_floating_substituents_attr(graph, substituents)
+    igraph::delete_vertex_attr(graph, "source_id")
+  }
+
+  transformed <- smap_structure(glycan, permute_forest)
+
+  expect_identical(as.character(transformed), as.character(glycan))
+  expect_true(unname(transformed == glycan))
+  expect_identical(
+    structure_floating_parts(transformed)$parents,
+    list(c(2L, 3L), c(1L, 3L))
+  )
+  expect_identical(
+    structure_floating_substituents(transformed)$parents,
+    list(c(1L, 3L))
+  )
+})
+
+test_that("structure mappers validate floating metadata returned by callbacks", {
+  glycan <- as_glycan_structure(
+    "{Neu5Ac(a2-6)|2,3}Gal(b1-3)GalNAc(a1-"
+  )
+
+  expect_snapshot(
+    smap_structure(glycan, delete_floating_parts_attr),
+    error = TRUE
+  )
+})
+
+test_that("structure mappers reuse unchanged validated graphs", {
+  glycan <- c(
+    first = o_glycan_core_1(),
+    duplicate = o_glycan_core_1(),
+    missing = glycan_structure(NA)
+  )
+  original_validator <- validate_glycan_graph
+  validation_count <- 0
+  testthat::local_mocked_bindings(
+    validate_glycan_graph = function(graph) {
+      validation_count <<- validation_count + 1
+      original_validator(graph)
+    }
+  )
+
+  unchanged <- list(
+    smap = smap_structure(glycan, identity),
+    smap2 = smap2_structure(glycan, 1, function(graph, ...) graph),
+    spmap = spmap_structure(
+      list(glycan, 1),
+      function(graph, ...) graph
+    ),
+    simap = simap_structure(glycan, function(graph, ...) graph)
+  )
+  purrr::walk(unchanged, function(result) {
+    expect_identical(as.character(result), as.character(glycan))
+    expect_identical(names(result), names(glycan))
+    expect_identical(is.na(result), is.na(glycan))
+    expect_length(attr(result, "graphs"), 1)
+  })
+  expect_equal(validation_count, 0)
+
+  smap_structure(
+    glycan[1],
+    function(graph) {
+      igraph::set_graph_attr(graph, "mapped", value = TRUE)
+    }
+  )
+  expect_equal(validation_count, 1)
+})
+
 # Additional regression tests for the smap2 nested list fix
 test_that("smap2 handles real glycan structures with nested match results correctly", {
   # Create a realistic glycan structure (simulating glyenzy use case)
@@ -1231,15 +1361,28 @@ test_that("smap_unique documents behavior with named input", {
   expect_true(is.null(names(result)) || startsWith(names(result), "Gal"))
 })
 
-test_that("get_structure_level returns one unnamed level for a named vector", {
+test_that("get_structure_level preserves names", {
   core1 <- o_glycan_core_1()
   core2 <- n_glycan_core()
   structures <- c(core1, core2, core1)
   names(structures) <- c("A", "B", "C")
 
   result <- get_structure_level(structures)
-  expect_equal(result, "intact")
-  expect_null(names(result))
+  expect_identical(result, c(A = "intact", B = "intact", C = "intact"))
+})
+
+test_that("smap_structure can create mixed residue types", {
+  structures <- c(
+    o_glycan_core_1(),
+    n_glycan_core(mono_type = "generic")
+  )
+
+  result <- smap_structure(structures, function(graph) {
+    replacement <- if (get_mono_type(graph) == "concrete") "Hex" else "Gal"
+    igraph::set_vertex_attr(graph, "mono", index = 1, value = replacement)
+  })
+
+  expect_identical(get_mono_type(result), c("mixed", "mixed"))
 })
 
 # Tests for NA handling in smap functions -----------------------------------

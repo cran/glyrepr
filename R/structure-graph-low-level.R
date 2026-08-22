@@ -22,9 +22,8 @@ validate_glycan_graph <- function(graph) {
     cli::cli_abort("Glycan structure must be directed.")
   }
 
-  if (!is_out_tree(graph)) {
-    cli::cli_abort("Glycan structure must be an out tree.")
-  }
+  validate_floating_graph_shape(graph)
+  validate_floating_substituent_parents(graph)
 
   if (!has_vertex_attrs(graph, "mono")) {
     cli::cli_abort("Glycan structure must have a vertex attribute 'mono'.")
@@ -45,12 +44,6 @@ validate_glycan_graph <- function(graph) {
       "Unknown monosaccharide: {stringr::str_c(unknown_monos, collapse = ', ')}"
     )
     cli::cli_abort(msg, monos = unknown_monos)
-  }
-
-  if (mix_generic_concrete(mono_names)) {
-    cli::cli_abort(
-      "Monosaccharides must be either all generic or all concrete."
-    )
   }
 
   if (!has_vertex_attrs(graph, "sub")) {
@@ -91,9 +84,11 @@ validate_glycan_graph <- function(graph) {
     cli::cli_abort(msg, linkages = invalid_linkages)
   }
 
-  if (any_dup_linkage_pos(graph)) {
+  if (any_dup_linkage_pos(graph, linkages)) {
     cli::cli_abort("Duplicated linkage positions.")
   }
+
+  validate_floating_metadata_assignments(graph)
 
   if (is.null(graph$anomer)) {
     cli::cli_abort("Glycan structure must have a graph attribute 'anomer'.")
@@ -101,6 +96,16 @@ validate_glycan_graph <- function(graph) {
 
   if (!valid_anomer(graph$anomer)) {
     cli::cli_abort(glue::glue("Invalid anomer: {graph$anomer}"))
+  }
+
+  alditol <- igraph::graph_attr(graph, "alditol")
+  if (
+    !is.null(alditol) &&
+      (!is.logical(alditol) || length(alditol) != 1 || is.na(alditol))
+  ) {
+    cli::cli_abort(
+      "Glycan structure graph attribute {.field alditol} must be one non-missing logical value."
+    )
   }
 
   graph
@@ -132,25 +137,29 @@ validate_single_glycan_structure <- function(glycan) {
 #' @export
 canonicalize_glycan_graph <- function(graph) {
   checkmate::assert_class(graph, "igraph")
+  graph <- normalize_alditol_attr(graph)
   graph <- ensure_name_vertex_attr(graph)
+  canonical_names <- as.character(seq_len(igraph::vcount(graph)))
+  if (!identical(igraph::V(graph)$name, canonical_names)) {
+    igraph::V(graph)$name <- canonical_names
+  }
   .reorder_one_graph(graph)
 }
 
 
-#' Validate Compatibility Across Glycan Graphs
+#' Validate a List of Glycan Graphs
 #'
-#' Check that a list of individually valid glycan graphs can coexist in one
-#' glycan structure vector. All graphs must use the same monosaccharide type:
-#' either concrete or generic.
+#' Check the container used to store individually valid glycan graphs in one
+#' glycan structure vector. Generic and concrete residues may coexist within a
+#' graph and across graphs.
 #'
 #' This function assumes that every element has already passed
 #' [validate_glycan_graph()]. It does not repeat scalar graph validation.
 #'
 #' @param graphs A list of individually valid `igraph` glycan graphs.
-#' @param label An optional label used in error messages.
+#' @param label An optional label retained for backward compatibility.
 #'
-#' @returns `NULL`, invisibly. An error is thrown when the graphs are
-#'   incompatible.
+#' @returns `NULL`, invisibly.
 #'
 #' @template low-level-structure-pipeline
 #'
@@ -159,39 +168,6 @@ canonicalize_glycan_graph <- function(graph) {
 validate_glycan_graph_vector <- function(graphs, label = NULL) {
   checkmate::assert_list(graphs, types = "igraph")
   checkmate::assert_string(label, null.ok = TRUE)
-
-  if (length(graphs) <= 1) {
-    return(invisible(NULL))
-  }
-
-  mono_types <- purrr::map_chr(graphs, get_graph_mono_type)
-
-  if (any(mono_types == "mixed")) {
-    cli::cli_abort(c(
-      "All structures must have a single monosaccharide type.",
-      "x" = "{.val {label}} contains structures with mixed generic and concrete monosaccharides."
-    ))
-  }
-
-  unique_types <- unique(mono_types)
-  if (length(unique_types) > 1) {
-    concrete_count <- sum(mono_types == "concrete")
-    generic_count <- sum(mono_types == "generic")
-
-    if (is.null(label)) {
-      cli::cli_abort(c(
-        "All structures must have the same monosaccharide type.",
-        "x" = "Found {.val {concrete_count}} concrete and {.val {generic_count}} generic structure(s) in the same vector.",
-        "i" = "Use {.fn convert_to_generic} to convert concrete structures to generic type."
-      ))
-    } else {
-      cli::cli_abort(c(
-        "All structures must have the same monosaccharide type.",
-        "x" = "{.val {label}} has mixed types: {.val {concrete_count}} concrete and {.val {generic_count}} generic structure(s)."
-      ))
-    }
-  }
-
   invisible(NULL)
 }
 
@@ -213,9 +189,51 @@ validate_glycan_graph_vector <- function(graphs, label = NULL) {
 #' @export
 graph_to_iupac <- function(graph) {
   checkmate::assert_class(graph, "igraph")
-  root <- which(igraph::degree(graph, mode = "in") == 0)
-  seq_cache <- build_seq_cache(graph, root)
-  paste0(seq_glycan_iupac(root, seq_cache), "(", graph$anomer, "-")
+  raw_parts <- igraph::graph_attr(graph, "floating_parts")
+  raw_substituents <- igraph::graph_attr(graph, "floating_substituents")
+  if (is.null(raw_parts) && is.null(raw_substituents)) {
+    seq_cache <- build_seq_cache(graph)
+    root <- seq_cache$root
+    return(format_reducing_end_iupac(
+      seq_glycan_iupac(root, seq_cache),
+      graph
+    ))
+  }
+
+  parts <- normalize_floating_parts(graph)
+  substituents <- normalize_floating_substituents(graph)
+
+  if (length(parts) == 0 && length(substituents) == 0) {
+    seq_cache <- build_seq_cache(graph)
+    root <- seq_cache$root
+    return(format_reducing_end_iupac(
+      seq_glycan_iupac(root, seq_cache),
+      graph
+    ))
+  }
+
+  main_vertices <- floating_metadata_main_vertices(graph, parts)
+  main <- igraph::induced_subgraph(graph, main_vertices)
+  main <- delete_floating_parts_attr(main)
+  main <- delete_floating_substituents_attr(main)
+  seq_cache <- build_seq_cache(main)
+  root <- seq_cache$root
+  main_iupac <- format_reducing_end_iupac(
+    seq_glycan_iupac(root, seq_cache),
+    graph
+  )
+  floating_iupac <- purrr::map_chr(
+    parts,
+    floating_part_iupac,
+    graph = graph
+  )
+  floating_sub_iupac <- purrr::map_chr(
+    substituents,
+    floating_substituent_iupac
+  )
+  floating_iupac <- c(floating_sub_iupac, floating_iupac)
+
+  paste0(paste0(floating_iupac, collapse = ""), main_iupac)
 }
 
 
@@ -233,8 +251,8 @@ graph_to_iupac <- function(graph) {
 #'
 #' @param iupac A character vector of canonical IUPAC-condensed strings. Missing
 #'   values are allowed, and names are preserved exactly.
-#' @param graphs A named list of valid, canonical, mutually compatible `igraph`
-#'   glycan graphs keyed by IUPAC-condensed strings.
+#' @param graphs A named list of valid, canonical `igraph` glycan graphs keyed
+#'   by IUPAC-condensed strings.
 #'
 #' @returns A `glyrepr_structure` vector.
 #'

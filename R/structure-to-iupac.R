@@ -1,8 +1,9 @@
 #' Convert Glycan Structure to IUPAC-like Sequence
 #'
 #' @description
-#' Convert a glycan structure to a sequence representation in the form of
-#' mono(linkage)mono, with branches represented by square brackets [].
+#' Convert a glycan structure vector or one glycan `igraph` to a sequence
+#' representation in the form of mono(linkage)mono, with branches represented
+#' by square brackets [].
 #' The backbone is chosen as the longest path, and for branches, linkages are
 #' ordered lexicographically with smaller linkages on the backbone.
 #'
@@ -14,6 +15,8 @@
 #' - linkage: glycosidic linkage (e.g., b1-4, a1-3)
 #' - Branches are enclosed in square brackets []
 #' - Substituents are appended directly to monosaccharide names (e.g., Glc3Me for Glc with 3Me substituent)
+#' - An alditol reducing end has an `-ol` suffix before its reducing-end
+#'   annotation (e.g., `GlcNAc-ol(a1-`)
 #'
 #' # Backbone Selection
 #'
@@ -29,9 +32,15 @@
 #'
 #' Smaller linkages are placed on the backbone, larger ones in branches.
 #'
-#' @param glycan A glyrepr_structure vector.
+#' For graph input, `structure_to_iupac()` validates and canonicalizes a copy of
+#' the graph before generating the sequence. Use [graph_to_iupac()] when the
+#' graph is already valid and canonical and the lower-level trusted-input path
+#' is desired.
 #'
-#' @returns A character vector representing the IUPAC sequences.
+#' @param glycan A glyrepr_structure vector or one glycan `igraph`.
+#'
+#' @returns A character vector for structure-vector input, or one unnamed
+#'   character scalar for graph input.
 #'
 #' @examples
 #' # Simple linear structure
@@ -48,6 +57,8 @@
 #' graph$anomer <- "a1"
 #' glycan <- glycan_structure(graph)
 #' structure_to_iupac(glycan)  # Returns "GlcNAc6Ac(b1-4)Glc3Me(a1-"
+#' structure_to_iupac(graph)
+#' structure_to_iupac(as_glycan_structure("GlcNAc-ol(a1-"))
 #'
 #' # Vectorized structures
 #' structs <- c(o_glycan_core_1(), n_glycan_core())
@@ -55,10 +66,15 @@
 #'
 #' @export
 structure_to_iupac <- function(glycan) {
+  if (inherits(glycan, "igraph")) {
+    glycan <- validate_glycan_graph(glycan)
+    glycan <- canonicalize_glycan_graph(glycan)
+    return(graph_to_iupac(glycan))
+  }
+
   if (!is_glycan_structure(glycan)) {
     cli::cli_abort(c(
-      "Input must be a glyrepr_structure vector.",
-      "i" = "Use `glycan_structure()` to create a glyrepr_structure from igraph objects."
+      "Input must be a glyrepr_structure vector or a glycan igraph."
     ))
   }
 
@@ -148,12 +164,13 @@ calculate_depths <- function(glycan, root, children = NULL) {
 #'   The signature of a node is a string used for branch ordering in ties breaking.
 #'
 #' @param glycan An igraph object representing a glycan structure
-#' @param root Root vertex index used for depth calculation
 #' @returns List containing child vertices, edge ids, linkages per parent, and node depths
 #' @noRd
-build_seq_cache <- function(glycan, root) {
+build_seq_cache <- function(glycan) {
   vcount <- igraph::vcount(glycan)
-  edge_ids <- seq_len(igraph::ecount(glycan))
+  edge_vertices <- igraph::as_edgelist(glycan, names = FALSE)
+  edge_ids <- seq_len(nrow(edge_vertices))
+  root <- setdiff(seq_len(vcount), edge_vertices[, 2])
 
   children <- vector("list", vcount)
   parent_edge_ids <- vector("list", vcount)
@@ -165,8 +182,7 @@ build_seq_cache <- function(glycan, root) {
   }
 
   if (length(edge_ids) > 0) {
-    edge_vertices <- igraph::ends(glycan, igraph::E(glycan), names = FALSE)
-    edge_linkages <- igraph::edge_attr(glycan, "linkage")
+    edge_linkages <- igraph::edge_attr(glycan)$linkage
     edge_ids_by_parent <- split(edge_ids, edge_vertices[, 1])
 
     for (parent in names(edge_ids_by_parent)) {
@@ -179,8 +195,9 @@ build_seq_cache <- function(glycan, root) {
   }
 
   # ===== Calculate node signatures =====
-  mono_vec <- igraph::vertex_attr(glycan, "mono")
-  sub_vec <- igraph::vertex_attr(glycan, "sub")
+  vertex_attributes <- igraph::vertex_attr(glycan)
+  mono_vec <- vertex_attributes$mono
+  sub_vec <- vertex_attributes$sub
   mono_sub <- ifelse(
     is.na(sub_vec) | sub_vec == "",
     mono_vec,
@@ -226,6 +243,7 @@ build_seq_cache <- function(glycan, root) {
   # ===== End of calculating node signatures =====
 
   list(
+    root = root,
     children = children,
     edge_ids = parent_edge_ids,
     linkages = parent_linkages,
@@ -328,6 +346,85 @@ seq_glycan_iupac <- function(node, cache) {
     ")",
     paste0(branch_seqs, collapse = ""),
     cache$mono_sub[[node]]
+  )
+}
+
+#' Generate IUPAC and Canonical Order in One Traversal
+#'
+#' @param node Current node.
+#' @param cache Precomputed adjacency and edge metadata.
+#' @returns A list with integer vectors `vertices` and `edges`, plus the
+#'   IUPAC-condensed `iupac` string without reducing-end anomer.
+#' @noRd
+seq_glycan_order_iupac <- function(node, cache) {
+  children <- cache$children[[node]]
+
+  if (length(children) == 0) {
+    return(list(
+      vertices = node,
+      edges = integer(),
+      iupac = cache$mono_sub[[node]]
+    ))
+  }
+
+  children_order <- if (length(children) > 1) {
+    order_branches(node, cache)
+  } else {
+    list(backbone = 1L, branches = integer())
+  }
+
+  backbone_index <- children_order$backbone
+  backbone <- seq_glycan_order_iupac(
+    children[[backbone_index]],
+    cache
+  )
+  backbone_edge <- cache$edge_ids[[node]][[backbone_index]]
+  backbone_linkage <- cache$linkages[[node]][[backbone_index]]
+
+  branches <- lapply(
+    children_order$branches,
+    function(branch_index) {
+      branch <- seq_glycan_order_iupac(
+        children[[branch_index]],
+        cache
+      )
+      branch$edges <- c(
+        branch$edges,
+        cache$edge_ids[[node]][[branch_index]]
+      )
+      branch$iupac <- paste0(
+        "[",
+        branch$iupac,
+        "(",
+        cache$linkages[[node]][[branch_index]],
+        ")]"
+      )
+      branch
+    }
+  )
+
+  list(
+    vertices = c(
+      backbone$vertices,
+      unlist(lapply(branches, `[[`, "vertices"), use.names = FALSE),
+      node
+    ),
+    edges = c(
+      backbone$edges,
+      backbone_edge,
+      unlist(lapply(branches, `[[`, "edges"), use.names = FALSE)
+    ),
+    iupac = paste0(
+      backbone$iupac,
+      "(",
+      backbone_linkage,
+      ")",
+      paste0(
+        unlist(lapply(branches, `[[`, "iupac"), use.names = FALSE),
+        collapse = ""
+      ),
+      cache$mono_sub[[node]]
+    )
   )
 }
 

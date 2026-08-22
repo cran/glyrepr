@@ -13,6 +13,20 @@ test_that("concrete composition is valid", {
   expect_s3_class(comp, "glyrepr_composition")
 })
 
+test_that("natural and unusual configurations coexist in compositions", {
+  comp <- glycan_composition(c(Fuc = 1, `D-Fuc` = 2, Gul = 3, `L-Gul` = 4))
+
+  expect_identical(
+    as.character(comp),
+    "Gul(3)Fuc(1)L-Gul(4)D-Fuc(2)"
+  )
+  expect_identical(
+    as.character(convert_to_generic(comp)),
+    "Hex(7)dHex(3)"
+  )
+  expect_identical(as_glycan_composition(as.character(comp)), comp)
+})
+
 test_that("compositions can contain substituents", {
   comp <- glycan_composition(c(Glc = 1, S = 1))
   expect_equal(as.character(comp), "Glc(1)S(1)")
@@ -33,18 +47,20 @@ test_that("substituents are located after monosaccharides", {
   expect_equal(as.character(comp), "Glc(1)Gal(1)Ac(1)S(1)")
 })
 
-test_that("mixed types within one composition throws error", {
-  expect_error(
-    glycan_composition(c(Hex = 1, Glc = 1)),
-    "Must have only one type of monosaccharide"
-  )
+test_that("mixed types within one composition are supported", {
+  comp <- glycan_composition(c(Hex = 1, Glc = 1))
+
+  expect_s3_class(comp, "glyrepr_composition")
+  expect_identical(get_mono_type(comp), "mixed")
 })
 
-test_that("mixed types within one composition vector throws error", {
-  expect_error(
-    glycan_composition(c(Hex = 1, HexNAc = 1), c(Glc = 1, Gal = 1)),
-    "Must have only one type of monosaccharide"
+test_that("mixed types within one composition vector are supported", {
+  comp <- glycan_composition(
+    c(Hex = 1, HexNAc = 1),
+    c(Glc = 1, Gal = 1)
   )
+
+  expect_identical(get_mono_type(comp), c("generic", "concrete"))
 })
 
 test_that("unknown monosaccharides throw error", {
@@ -105,6 +121,17 @@ test_that("as_glycan_composition works for a glycan structure", {
   expect_equal(comp, expected_comp)
 })
 
+test_that("as_glycan_composition works for a glycan graph", {
+  structure <- as_glycan_structure("Gal3Me6S(b1-3)GalNAc(a1-")
+  graph <- get_structure_graphs(structure)
+
+  result <- as_glycan_composition(graph)
+  expected <- glycan_composition(c(Gal = 1L, GalNAc = 1L, Me = 1L, S = 1L))
+
+  expect_s3_class(result, "glyrepr_composition")
+  expect_identical(result, expected)
+})
+
 test_that("as_glycan_composition works for a glycan structure with substituents", {
   graph <- igraph::make_graph(~ 1 - +2, 2 - +3)
   igraph::V(graph)$mono <- c("Glc", "Gal", "Glc")
@@ -133,6 +160,15 @@ test_that("as_glycan_composition works for a glycan structure with multiple subs
   expect_s3_class(comp, "glyrepr_composition")
   expected_comp <- glycan_composition(c(Glc = 2L, Gal = 1L, Me = 1L, S = 1L))
   expect_equal(comp, expected_comp)
+})
+
+test_that("ambiguous positions contribute one substituent to compositions", {
+  structure <- as_glycan_structure("Gal4/6S(a1-")
+
+  expect_equal(
+    as_glycan_composition(structure),
+    glycan_composition(c(Gal = 1L, S = 1L))
+  )
 })
 
 test_that("as.list returns named integer vectors for compositions", {
@@ -233,20 +269,20 @@ test_that("c() works with empty composition vectors", {
   expect_equal(format(combined2), "Hex(2)HexNAc(1)")
 })
 
-test_that("c() throws error for different monosaccharide types", {
-  # Test that combining generic and concrete compositions throws an error
+test_that("c() combines different monosaccharide types", {
   generic_comp <- glycan_composition(c(Hex = 1, HexNAc = 1))
   concrete_comp <- glycan_composition(c(Glc = 1, Gal = 1))
 
-  expect_error(c(generic_comp, concrete_comp), "Can't combine")
+  combined <- c(generic_comp, concrete_comp)
+  expect_identical(get_mono_type(combined), c("generic", "concrete"))
 })
 
-test_that("c() throws error for different monosaccharide types with substituents", {
-  # Test that combining generic and concrete compositions throws an error
+test_that("c() combines different monosaccharide types with substituents", {
   generic_comp <- glycan_composition(c(Hex = 1, HexNAc = 1, Me = 1))
   concrete_comp <- glycan_composition(c(Glc = 1, Gal = 1, S = 1))
 
-  expect_error(c(generic_comp, concrete_comp), "Can't combine")
+  combined <- c(generic_comp, concrete_comp)
+  expect_identical(get_mono_type(combined), c("generic", "concrete"))
 })
 
 test_that("c() maintains proper ordering within compositions", {
@@ -505,6 +541,13 @@ test_that("print handles NA compositions", {
   comp <- c(glycan_composition(c(Hex = 5)), NA, glycan_composition(c(Hex = 3)))
   output <- capture.output(print(comp))
   expect_true(any(grepl("<NA>", output)))
+})
+
+test_that("print.glyrepr_composition supports n", {
+  compositions <- rep(glycan_composition(c(Hex = 5)), 11)
+
+  expect_snapshot_output(print(compositions))
+  expect_snapshot_output(print(compositions, n = Inf))
 })
 
 test_that("tibble printing handles NA compositions", {

@@ -34,6 +34,22 @@ test_that("fill_anomer_pos preserves existing anomer annotations", {
   )
 })
 
+test_that("fill_anomer_pos skips floating normalization for ordinary trees", {
+  struc <- as_glycan_structure("Gal(??-?)GalNAc(??-")
+  testthat::local_mocked_bindings(
+    normalize_floating_parts = function(...) {
+      stop("floating normalization should not run")
+    }
+  )
+
+  result <- fill_anomer_pos(struc)
+
+  expect_identical(
+    unname(as.character(result)),
+    "Gal(?1-?)GalNAc(?1-"
+  )
+})
+
 
 test_that("fill_anomer_pos preserves NA values and names", {
   strucs <- c(
@@ -58,5 +74,53 @@ test_that("fill_anomer_pos accepts generic monosaccharides", {
   expect_equal(
     as.character(result),
     "Hex(?1-?)[Hex(?1-?)]Hex(?1-?)HexNAc(?1-?)HexNAc(?1-"
+  )
+})
+
+test_that("fill_anomer_pos fills floating attachment positions", {
+  strucs <- as_glycan_structure(c(
+    "{Neu5Ac(??-?)|2,3}Gal(??-?)GalNAc(??-",
+    "{Gal(??-?)Neu5Ac(??-?)|3,4}GlcNAc(??-?)GalNAc(??-"
+  ))
+
+  result <- fill_anomer_pos(strucs)
+
+  expect_identical(
+    as.character(result),
+    c(
+      "{Neu5Ac(?2-?)|2,3}Gal(?1-?)GalNAc(?1-",
+      "{Gal(?1-?)Neu5Ac(?2-?)|3,4}GlcNAc(?1-?)GalNAc(?1-"
+    )
+  )
+})
+
+test_that("fill_anomer_pos works with glycan graphs without reordering", {
+  structure <- as_glycan_structure(
+    "{Neu5Ac(??-?)|2,3}Gal(??-?)GalNAc(??-"
+  )
+  graph <- get_structure_graphs(structure)
+  names_before <- igraph::V(graph)$name
+  edges_before <- igraph::as_edgelist(graph, names = FALSE)
+
+  result <- fill_anomer_pos(graph)
+
+  expect_s3_class(result, "igraph")
+  expect_identical(igraph::V(result)$name, names_before)
+  expect_identical(igraph::as_edgelist(result, names = FALSE), edges_before)
+  expect_identical(igraph::E(result)$linkage, "?1-?")
+  expect_identical(result$anomer, "?1")
+  expect_identical(result$floating_parts[[1]]$linkage, "?2-?")
+})
+
+test_that("fill_anomer_pos preserves known floating attachment positions", {
+  struc <- as_glycan_structure(
+    "{Neu5Ac(a2-3)|2,3}Gal(??-4)GalNAc(??-"
+  )
+
+  result <- fill_anomer_pos(struc)
+
+  expect_identical(
+    as.character(result),
+    "{Neu5Ac(a2-3)|2,3}Gal(?1-4)GalNAc(?1-"
   )
 })

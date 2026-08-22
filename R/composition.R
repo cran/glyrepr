@@ -13,8 +13,8 @@
 #' @details
 #' Compositions can contain:
 #'
-#' - Monosaccharides: either generic (e.g., "Hex", "HexNAc") or concrete (e.g., "Glc", "Gal").
-#'   All monosaccharides in a composition vector must be of the same type.
+#' - Monosaccharides: generic (e.g., "Hex", "HexNAc") or concrete
+#'   (e.g., "Glc", "Gal"). Generic and concrete residues may be mixed.
 #' - Substituents: e.g., "Me", "Ac", "S". These can be mixed with either
 #'   generic or concrete monosaccharides.
 #'
@@ -97,6 +97,7 @@ is_glycan_composition <- function(x) {
 #'   - Named integer vectors or lists of named integer vectors
 #'   - Character vectors with composition strings (e.g., "Hex(5)HexNAc(2)")
 #'   - `glyrepr_structure` objects (counts both monosaccharides and substituents)
+#'   - Glycan `igraph` objects (returns a length-one composition vector)
 #'   - Existing `glyrepr_composition` objects (returned as-is)
 #'
 #' @returns A `glyrepr_composition` object.
@@ -105,8 +106,9 @@ is_glycan_composition <- function(x) {
 #' This function uses the vctrs casting framework for type conversion.
 #' When converting from glycan structures, both monosaccharides and substituents
 #' are counted. Substituents are extracted from the `sub` attribute of each
-#' vertex in the structure. For example, a vertex with `sub = "3Me"`
-#' contributes one "Me" substituent to the composition.
+#' vertex and from the `floating_substituents` graph attribute. For example, a
+#' vertex with `sub = "3Me"` or an unresolved `{?Me}` each contributes one
+#' "Me" substituent to the composition.
 #'
 #' Simple composition strings use one-letter residue codes: "H" for "Hex",
 #' "N" for "HexNAc", "F" for "dHex", "S"/"A" for "NeuAc", and "G" for
@@ -131,12 +133,17 @@ is_glycan_composition <- function(x) {
 #' comp <- glycan_composition(c(Hex = 5, HexNAc = 2))
 #' as_glycan_composition(comp)
 #'
-#' # From a glycan structure vector
+#' # From a glycan structure vector or graph
 #' strucs <- c(n_glycan_core(), o_glycan_core_1())
 #' as_glycan_composition(strucs)
+#' graph <- get_structure_graphs(strucs[[1]])
+#' as_glycan_composition(graph)
 #'
 #' @export
 as_glycan_composition <- function(x) {
+  if (inherits(x, "igraph")) {
+    return(new_glycan_composition(list(graph_to_composition(x))))
+  }
   vec_cast(x, new_glycan_composition())
 }
 
@@ -272,34 +279,36 @@ vec_cast.glyrepr_composition.character <- function(x, to, ...) {
 #' @export
 vec_cast.glyrepr_composition.glyrepr_structure <- function(x, to, ...) {
   # Use smap to convert each structure to composition
-  compositions <- smap(x, function(graph) {
-    # Count monosaccharides
-    monos <- igraph::V(graph)$mono
-    mono_tb <- table(monos)
-    mono_result <- as.integer(mono_tb)
-    names(mono_result) <- names(mono_tb)
-
-    # Count substituents
-    subs <- igraph::V(graph)$sub
-    sub_types <- extract_substituent_types(subs)
-    if (length(sub_types) > 0) {
-      sub_tb <- table(sub_types)
-      sub_result <- as.integer(sub_tb)
-      names(sub_result) <- names(sub_tb)
-    } else {
-      sub_result <- integer(0)
-    }
-
-    # Combine monosaccharides and substituents
-    result <- c(mono_result, sub_result)
-
-    # Sort by composition component order (monosaccharides first, then substituents)
-    result <- .reorder_composition_components(result)
-    result
-  })
+  compositions <- smap(x, graph_to_composition)
 
   # Create composition object
   new_glycan_composition(compositions)
+}
+
+graph_to_composition <- function(graph) {
+  monos <- igraph::V(graph)$mono
+  mono_tb <- table(monos)
+  mono_result <- as.integer(mono_tb)
+  names(mono_result) <- names(mono_tb)
+
+  subs <- igraph::V(graph)$sub
+  floating_substituents <- normalize_floating_substituents(graph)
+  if (length(floating_substituents) > 0) {
+    subs <- c(
+      subs,
+      purrr::map_chr(floating_substituents, "substituent")
+    )
+  }
+  sub_types <- extract_substituent_types(subs)
+  if (length(sub_types) > 0) {
+    sub_tb <- table(sub_types)
+    sub_result <- as.integer(sub_tb)
+    names(sub_result) <- names(sub_tb)
+  } else {
+    sub_result <- integer()
+  }
+
+  .reorder_composition_components(c(mono_result, sub_result))
 }
 
 #' @export
@@ -363,29 +372,6 @@ vec_cast.logical.glyrepr_composition <- function(x, to, ...) {
 #' @export
 vec_restore.glyrepr_composition <- function(x, to, ...) {
   data <- vctrs::field(x, "data")
-
-  # Skip NA elements (NULL) when checking types
-  na_mask <- purrr::map_lgl(data, .is_na_composition_elem)
-  non_na_data <- data[!na_mask]
-
-  if (length(non_na_data) == 0) {
-    return(new_glycan_composition(data))
-  }
-
-  monos_list <- purrr::map(
-    non_na_data,
-    ~ names(.x)[!names(.x) %in% available_substituents()]
-  )
-  mono_types <- purrr::map_chr(monos_list, get_mono_type_impl)
-
-  if (length(unique(mono_types)) > 1) {
-    cli::cli_abort(c(
-      "Can't combine `glyrepr_composition`s with different monosaccharide types.",
-      "x" = "Found compositions with types: {.val {unique(mono_types)}}.",
-      "i" = "Use {.fn convert_to_generic} to convert concrete to generic, or ensure both compositions use the same type."
-    ))
-  }
-
   new_glycan_composition(data)
 }
 
@@ -400,6 +386,12 @@ is.na.glyrepr_composition <- function(x, ...) {
     return(glycan_composition())
   }
   glycan_composition(x)
+}
+
+#' @export
+print.glyrepr_composition <- function(x, ..., n = 10) {
+  vctrs::obj_print(x, ..., max_n = n)
+  invisible(x)
 }
 
 #' @export
@@ -513,20 +505,8 @@ new_glycan_composition <- function(x = list()) {
     ))
   }
 
-  # 5. Mono type check (skip NA elements)
-  mono_types <- .get_comp_mono_types(x_valid)
-  if (any(mono_types == "mixed")) {
-    cli::cli_abort(c(
-      "Must have only one type of monosaccharide.",
-      "x" = "Some compositions have mixed monosaccharide types (both generic and concrete)."
-    ))
-  }
-  if (!all(mono_types == mono_types[[1]])) {
-    cli::cli_abort(c(
-      "Must have only one type of monosaccharide.",
-      "x" = "Both generic and concrete compositions exist."
-    ))
-  }
+  # 5. Every composition must contain at least one monosaccharide.
+  .get_comp_mono_types(x_valid)
 
   # 6. Positive number check (skip NA elements)
   if (!purrr::every(x_valid, ~ all(.x > 0))) {
@@ -626,7 +606,7 @@ parse_single_composition <- function(char) {
 
 .parse_byonic_comp <- function(x) {
   # Use regex to find all patterns like "MonoName(number)"
-  pattern <- "([A-Za-z0-9]+)\\((\\d+)\\)"
+  pattern <- "((?:[DL]-)?[A-Za-z0-9]+)\\((\\d+)\\)"
   matches <- stringr::str_extract_all(x, pattern, simplify = FALSE)[[1]]
 
   if (length(matches) == 0) {

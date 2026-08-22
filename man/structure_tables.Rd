@@ -4,6 +4,8 @@
 \alias{structure_tables}
 \alias{structure_nodes}
 \alias{structure_edges}
+\alias{structure_floating_parts}
+\alias{structure_floating_substituents}
 \alias{structure_from_tibbles}
 \title{Convert Glycan Structures to Graph Tables}
 \usage{
@@ -11,10 +13,21 @@ structure_nodes(x)
 
 structure_edges(x)
 
-structure_from_tibbles(nodes, edges, anomers)
+structure_floating_parts(x)
+
+structure_floating_substituents(x)
+
+structure_from_tibbles(
+  nodes,
+  edges,
+  anomers,
+  floating_parts = NULL,
+  floating_substituents = NULL,
+  alditols = FALSE
+)
 }
 \arguments{
-\item{x}{A glycan structure vector.}
+\item{x}{A glycan structure vector or one glycan \code{igraph}.}
 
 \item{nodes}{A data frame with columns \code{glycan_id}, \code{node_id}, \code{mono}, and
 \code{sub}, and optionally \code{glycan_name}.}
@@ -23,6 +36,17 @@ structure_from_tibbles(nodes, edges, anomers)
 \code{to_node}, and \code{linkage}, and optionally \code{glycan_name}.}
 
 \item{anomers}{A character vector of reducing-end anomers, one per glycan.}
+
+\item{floating_parts}{A data frame returned by
+\code{structure_floating_parts()}, or \code{NULL} when no floating parts are present.}
+
+\item{floating_substituents}{A data frame returned by
+\code{structure_floating_substituents()}, or \code{NULL} when no floating
+substituents are present.}
+
+\item{alditols}{A logical vector indicating alditol status, either one value
+or one per glycan. Missing values are allowed only for missing glycans.
+Defaults to \code{FALSE} for backward compatibility.}
 }
 \value{
 \itemize{
@@ -30,27 +54,77 @@ structure_from_tibbles(nodes, edges, anomers)
 \code{mono}, and \code{sub}.
 \item \code{structure_edges()} returns a tibble with columns \code{glycan_id}, \code{edge_id},
 \code{from_node}, \code{to_node}, and \code{linkage}.
+\item \code{structure_floating_parts()} returns a tibble with columns \code{glycan_id},
+\code{part_id}, \code{root_node}, the list-column \code{nodes}, \code{linkage}, and the
+list-column \code{parents}.
+\item \code{structure_floating_substituents()} returns a tibble with columns
+\code{glycan_id}, \code{substituent_id}, \code{substituent}, and the list-column
+\code{parents}.
 \item \code{structure_from_tibbles()} returns a \code{glyrepr_structure} vector.
 }
 }
 \description{
-\code{structure_nodes()} and \code{structure_edges()} convert a glycan structure vector
-to node and edge tibbles. \code{structure_from_tibbles()} rebuilds a
-\code{glyrepr_structure} vector from those tibbles and a vector of reducing-end
-anomers.
+\code{structure_nodes()}, \code{structure_edges()}, \code{structure_floating_parts()}, and
+\code{structure_floating_substituents()} convert
+a glycan structure vector or one glycan \code{igraph} to normalized graph tables.
+\code{structure_from_tibbles()} rebuilds a \code{glyrepr_structure} vector from those
+tables, a vector of reducing-end anomers, and optional alditol status.
 
 The \code{glycan_id} column is the integer position of each glycan in the input
 vector. Duplicate structures are expanded to their original vector positions.
 Missing structures have no node or edge rows and are reconstructed from
 missing values in \code{anomers}.
-If \code{x} is named, the node and edge tibbles also contain a \code{glycan_name}
-column. \code{structure_from_tibbles()} uses \code{glycan_name} as output names when
-that column is present.
+If \code{x} is named, all four tibbles also contain a \code{glycan_name} column.
+\code{structure_from_tibbles()} uses \code{glycan_name} as output names when that
+column is present.
+
+For structure-vector input, \code{structure_nodes()$node_id} follows residue order
+in the complete canonical IUPAC-condensed string. For graph input, it follows
+the graph's current numeric vertex positions without canonicalizing or
+renumbering them. A graph is represented with \code{glycan_id = 1L} and no
+\code{glycan_name} column.
+
+In \code{structure_floating_parts()}, \code{root_node} and every integer in the \code{nodes}
+and \code{parents} list-columns refer to \code{structure_nodes()$node_id} for the same
+glycan. \code{nodes} contains every node in the floating component. An empty
+\code{parents} vector means all feasible nodes outside that component are
+candidates. The \code{linkage} column describes the virtual attachment to an
+unresolved parent; this attachment is intentionally absent from
+\code{structure_edges()}. During
+reconstruction, a row with exactly one effective candidate parent is
+normalized to an ordinary edge and is therefore absent from the resulting
+\code{structure_floating_parts()} table.
+
+Parent indices written after \code{|} in an IUPAC-condensed floating part are
+complete-sequence node IDs, identical to \code{structure_nodes()$node_id} for a
+canonical structure. Residues in floating blocks precede the main tree, and
+substituent blocks contribute no nodes. \code{structure_from_tibbles()} expects
+these same global node IDs and preserves cross-component domains.
+
+In \code{structure_floating_substituents()}, each row describes one unresolved
+substituent. \code{substituent} is its canonical position-and-name token, and the
+\code{parents} list-column contains candidate global node IDs. An empty vector
+means all feasible residue nodes are candidates. A singleton candidate is
+normalized into \code{structure_nodes()$sub}, so it does not remain in the
+floating-substituent table.
 }
 \examples{
 glycans <- c(o_glycan_core_1(), o_glycan_core_1())
 nodes <- structure_nodes(glycans)
 edges <- structure_edges(glycans)
 structure_from_tibbles(nodes, edges, get_anomer(glycans))
+
+floating <- as_glycan_structure(
+  "{6S|1,2}{Neu5Ac(a2-6)|2,3}Gal(b1-3)GalNAc(a1-"
+)
+floating_parts <- structure_floating_parts(floating)
+floating_substituents <- structure_floating_substituents(floating)
+structure_from_tibbles(
+  structure_nodes(floating),
+  structure_edges(floating),
+  get_anomer(floating),
+  floating_parts,
+  floating_substituents
+)
 
 }

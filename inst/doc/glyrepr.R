@@ -38,8 +38,7 @@ strucs <- c(o_glycan_core_1(), o_glycan_core_2())
 as_glycan_composition(strucs)
 
 ## -----------------------------------------------------------------------------
-# This raises an error because the monosaccharide names are mixed.
-try(as_glycan_composition(c("Hex(5)HexNAc(2)", "Man(5)GlcNAc(2)")), silent = TRUE)
+as_glycan_composition(c("Hex(5)HexNAc(2)", "Man(5)GlcNAc(2)", "Hex(5)GlcNAc(2)"))
 
 ## -----------------------------------------------------------------------------
 comps
@@ -164,10 +163,10 @@ as_glycan_structure(c(
 strucs
 
 ## -----------------------------------------------------------------------------
-reduce_structure_level(strucs, to_level = "basic")
+remove_linkages(strucs)
 
 ## -----------------------------------------------------------------------------
-remove_linkages(strucs)  # same as reduce_structure_level(strucs, to_level = "topological")
+convert_to_generic(remove_linkages(strucs))
 
 ## -----------------------------------------------------------------------------
 strucs_with_subs <- as_glycan_structure(c(

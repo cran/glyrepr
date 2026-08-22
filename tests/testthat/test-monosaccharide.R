@@ -20,13 +20,117 @@ test_that("get all generic monosaccharides", {
   res <- available_monosaccharides("generic")
   expect_contains(res, c("Hex", "HexNAc", "dHex"))
   expect_true(length(unique(res)) == length(res))
+  expect_identical(res, unique(monosaccharide_definitions$generic))
 })
 
 
 test_that("get all concrete monosaccharides", {
   res <- available_monosaccharides("concrete")
-  expect_contains(res, c("Gal", "Man", "GlcNAc"))
+  expect_contains(res, c("Gal", "Man", "GlcNAc", "Galf", "GlcfNAc"))
   expect_true(length(unique(res)) == length(res))
+})
+
+
+test_that("every concrete monosaccharide has a furanose form", {
+  ringless <- names(furanose_monosaccharides)
+  furanose <- unname(furanose_monosaccharides)
+
+  expect_length(furanose, length(ringless))
+  expect_setequal(ringless, monosaccharide_definitions$concrete)
+  expect_setequal(
+    available_monosaccharides("concrete"),
+    c(ringless, furanose)
+  )
+  expect_identical(
+    is_known_monosaccharide(furanose),
+    rep(TRUE, length(furanose))
+  )
+  expect_identical(
+    get_mono_type(furanose),
+    rep("concrete", length(furanose))
+  )
+  expect_identical(
+    infer_anomer_pos(furanose),
+    infer_anomer_pos(ringless)
+  )
+  expect_identical(
+    convert_to_generic(furanose),
+    convert_to_generic(ringless)
+  )
+})
+
+
+test_that("unusual configurations are appended to the concrete vocabulary", {
+  natural <- natural_monosaccharide_definitions$concrete
+  natural_furanose <- unname(natural_furanose_monosaccharides)
+  unusual <- unname(
+    unusual_configuration_monosaccharides[configuration_monos]
+  )
+  unusual_furanose <- unname(
+    unusual_configuration_furanose_monosaccharides[unusual]
+  )
+
+  expect_identical(
+    available_monosaccharides("concrete"),
+    c(natural, natural_furanose, unusual, unusual_furanose)
+  )
+  expect_contains(unusual, c("D-Fuc", "L-Gul", "L-Neu5Ac", "L-Kdn"))
+  expect_contains(unusual_furanose, c("D-Fucf", "L-Gulf", "L-Neuf5Ac"))
+  expect_identical(is_known_monosaccharide(c("DFuc", "LGul")), c(FALSE, FALSE))
+})
+
+
+test_that("every unusual configuration has concrete residue behavior", {
+  natural <- names(unusual_configuration_monosaccharides)
+  unusual <- unname(unusual_configuration_monosaccharides)
+
+  expect_identical(
+    is_known_monosaccharide(unusual),
+    rep(TRUE, length(unusual))
+  )
+  expect_identical(
+    get_mono_type(unusual),
+    rep("concrete", length(unusual))
+  )
+  expect_identical(
+    unname(infer_anomer_pos(unusual)),
+    unname(infer_anomer_pos(natural))
+  )
+  expect_identical(
+    unname(convert_to_generic(unusual)),
+    unname(convert_to_generic(natural))
+  )
+})
+
+
+test_that("natural configurations remain unprefixed", {
+  explicit_natural <- paste0(
+    natural_monosaccharide_configurations,
+    "-",
+    names(natural_monosaccharide_configurations)
+  )
+
+  expect_identical(
+    is_known_monosaccharide(explicit_natural),
+    rep(FALSE, length(explicit_natural))
+  )
+  expect_identical(
+    is_known_monosaccharide(c("L-Fuc", "D-Gul", "D-Neu5Ac")),
+    rep(FALSE, 3)
+  )
+})
+
+
+test_that("configuration-unspecified residues have no unusual forms", {
+  prefixed <- c(
+    paste0("D-", configuration_unspecified_monosaccharides),
+    paste0("L-", configuration_unspecified_monosaccharides)
+  )
+
+  expect_identical(
+    is_known_monosaccharide(prefixed),
+    rep(FALSE, length(prefixed))
+  )
 })
 
 

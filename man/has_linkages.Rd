@@ -7,7 +7,7 @@
 has_linkages(glycan, strict = FALSE)
 }
 \arguments{
-\item{glycan}{A \code{\link[=glycan_structure]{glycan_structure()}} vector.}
+\item{glycan}{A \code{\link[=glycan_structure]{glycan_structure()}} vector or a glycan \code{igraph}.}
 
 \item{strict}{A logical value.
 \itemize{
@@ -15,10 +15,13 @@ has_linkages(glycan, strict = FALSE)
 linkage is partially known (not "??-?").
 \item If \code{TRUE}, a glycan is considered to have linkages only if all linkages
 are fully determined (no "?" or multiple positions in the linkage).
+Linkages include both graph edges and the virtual attachment linkage of
+each floating part.
 }}
 }
 \value{
-A logical vector indicating if each glycan structure has linkages.
+A logical vector for structure-vector input, or a logical scalar for
+graph input.
 }
 \description{
 Unknown linkages in a glycan structure are represented by "??-?".

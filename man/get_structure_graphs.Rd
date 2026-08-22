@@ -11,13 +11,21 @@ get_structure_graphs(x, return_list = NULL)
 
 \item{return_list}{If \code{TRUE}, always returns a list.
 If \code{FALSE} and \code{x} has a length of 1, return the igraph object directly.
-If not provided (default), \code{FALSE} when \code{x} has a length of 1 and \code{TRUE} otherwise.}
+If not provided (default), \code{FALSE} when \code{x} has a length of 1 and \code{TRUE}
+otherwise, including for an empty vector.}
 }
 \value{
 A list of igraph objects or an igraph object directly (see \code{return_list} parameter).
 }
 \description{
 Extract individual glycan structure graphs from a glycan structure vector.
+A structure with floating parts is returned as one annotated, weakly
+disconnected \code{igraph}: its main tree and floating components share the graph,
+and the \code{floating_parts} graph attribute records each component's node
+indices, virtual attachment, and candidate parents. See \code{\link[=glycan_structure]{glycan_structure()}}
+for the metadata schema.
+A structure with floating substituents carries a \code{floating_substituents}
+graph attribute containing their tokens and candidate parent indices.
 }
 \examples{
 structures <- c(o_glycan_core_1(), n_glycan_core())

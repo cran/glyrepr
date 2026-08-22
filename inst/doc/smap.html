@@ -417,7 +417,7 @@ has 5,000 elements, but only 5 unique graphs are stored internally.</p>
 <span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt;     src</span></span>
 <span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="fu">obj_sizes</span>(struc, large_struc)</span>
-<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt; *  15.54 kB</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt; *  15.95 kB</span></span>
 <span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt; * 320.69 kB</span></span></code></pre></div>
 <p>The memory difference can be substantial. For repeated structures,
 the optimized representation can be much smaller than storing every
@@ -594,10 +594,10 @@ from automatic deduplication:</p>
 <span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a></span>
 <span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Dataset size:&quot;</span>, <span class="fu">length</span>(huge_struc), <span class="st">&quot;structures</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
 <span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a><span class="co">#&gt; Dataset size: 25000 structures</span></span>
-<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Unique structures:&quot;</span>, <span class="fu">length</span>(<span class="fu">attr</span>(huge_struc, <span class="st">&quot;structures&quot;</span>)), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
-<span id="cb14-7"><a href="#cb14-7" tabindex="-1"></a><span class="co">#&gt; Unique structures: 0</span></span>
-<span id="cb14-8"><a href="#cb14-8" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Redundancy factor:&quot;</span>, <span class="fu">length</span>(huge_struc) <span class="sc">/</span> <span class="fu">length</span>(<span class="fu">attr</span>(huge_struc, <span class="st">&quot;structures&quot;</span>)), <span class="st">&quot;x</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
-<span id="cb14-9"><a href="#cb14-9" tabindex="-1"></a><span class="co">#&gt; Redundancy factor: Inf x</span></span>
+<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Unique structures:&quot;</span>, <span class="fu">length</span>(<span class="fu">attr</span>(huge_struc, <span class="st">&quot;graphs&quot;</span>)), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb14-7"><a href="#cb14-7" tabindex="-1"></a><span class="co">#&gt; Unique structures: 5</span></span>
+<span id="cb14-8"><a href="#cb14-8" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Redundancy factor:&quot;</span>, <span class="fu">length</span>(huge_struc) <span class="sc">/</span> <span class="fu">length</span>(<span class="fu">attr</span>(huge_struc, <span class="st">&quot;graphs&quot;</span>)), <span class="st">&quot;x</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb14-9"><a href="#cb14-9" tabindex="-1"></a><span class="co">#&gt; Redundancy factor: 5000 x</span></span>
 <span id="cb14-10"><a href="#cb14-10" tabindex="-1"></a></span>
 <span id="cb14-11"><a href="#cb14-11" tabindex="-1"></a><span class="fu">library</span>(tictoc)</span>
 <span id="cb14-12"><a href="#cb14-12" tabindex="-1"></a></span>
@@ -605,14 +605,14 @@ from automatic deduplication:</p>
 <span id="cb14-14"><a href="#cb14-14" tabindex="-1"></a><span class="fu">tic</span>(<span class="st">&quot;smap_int (optimized)&quot;</span>)</span>
 <span id="cb14-15"><a href="#cb14-15" tabindex="-1"></a>vertex_counts_optimized <span class="ot">&lt;-</span> <span class="fu">smap_int</span>(huge_struc, igraph<span class="sc">::</span>vcount)</span>
 <span id="cb14-16"><a href="#cb14-16" tabindex="-1"></a><span class="fu">toc</span>()</span>
-<span id="cb14-17"><a href="#cb14-17" tabindex="-1"></a><span class="co">#&gt; smap_int (optimized): 0.024 sec elapsed</span></span>
+<span id="cb14-17"><a href="#cb14-17" tabindex="-1"></a><span class="co">#&gt; smap_int (optimized): 0.015 sec elapsed</span></span>
 <span id="cb14-18"><a href="#cb14-18" tabindex="-1"></a></span>
 <span id="cb14-19"><a href="#cb14-19" tabindex="-1"></a><span class="co"># Naive approach: extract all graphs and process each one</span></span>
 <span id="cb14-20"><a href="#cb14-20" tabindex="-1"></a><span class="fu">tic</span>(<span class="st">&quot;Naive approach (all graphs)&quot;</span>)</span>
 <span id="cb14-21"><a href="#cb14-21" tabindex="-1"></a>all_graphs <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(huge_struc)  <span class="co"># Extracts all 25,000 graphs</span></span>
 <span id="cb14-22"><a href="#cb14-22" tabindex="-1"></a>vertex_counts_naive <span class="ot">&lt;-</span> purrr<span class="sc">::</span><span class="fu">map_int</span>(all_graphs, igraph<span class="sc">::</span>vcount)</span>
 <span id="cb14-23"><a href="#cb14-23" tabindex="-1"></a><span class="fu">toc</span>()</span>
-<span id="cb14-24"><a href="#cb14-24" tabindex="-1"></a><span class="co">#&gt; Naive approach (all graphs): 0.163 sec elapsed</span></span>
+<span id="cb14-24"><a href="#cb14-24" tabindex="-1"></a><span class="co">#&gt; Naive approach (all graphs): 0.134 sec elapsed</span></span>
 <span id="cb14-25"><a href="#cb14-25" tabindex="-1"></a></span>
 <span id="cb14-26"><a href="#cb14-26" tabindex="-1"></a><span class="co"># Verify results are equivalent (though data types may differ)</span></span>
 <span id="cb14-27"><a href="#cb14-27" tabindex="-1"></a><span class="fu">all.equal</span>(vertex_counts_optimized, vertex_counts_naive)</span>
@@ -633,6 +633,15 @@ purrr-style lambda notation:</p>
 <span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a><span class="fu">summary</span>(clustering_coeffs)</span>
 <span id="cb15-4"><a href="#cb15-4" tabindex="-1"></a><span class="co">#&gt;    Min. 1st Qu.  Median    Mean 3rd Qu.    Max.     NAs </span></span>
 <span id="cb15-5"><a href="#cb15-5" tabindex="-1"></a><span class="co">#&gt;       0       0       0       0       0       0    2000</span></span></code></pre></div>
+<p>For a structure with floating parts, the callback receives one
+annotated, weakly disconnected graph containing the main tree and every
+floating component. Use <code>has_floating_parts()</code> before
+applying code that assumes a single tree. Structure-returning variants
+such as <code>smap_structure()</code> validate and canonicalize changed
+graphs while reusing unchanged graphs that are already valid and
+canonical; a callback that changes vertex identities or components must
+also update the graph’s <code>floating_parts</code> and
+<code>floating_substituents</code> metadata.</p>
 </div>
 <div id="combining-multiple-metrics" class="section level3">
 <h3>Combining Multiple Metrics</h3>
@@ -752,15 +761,15 @@ structures.</li>
 <span id="cb19-17"><a href="#cb19-17" tabindex="-1"></a><span class="co">#&gt; [1] stats     graphics  grDevices utils     datasets  methods   base     </span></span>
 <span id="cb19-18"><a href="#cb19-18" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb19-19"><a href="#cb19-19" tabindex="-1"></a><span class="co">#&gt; other attached packages:</span></span>
-<span id="cb19-20"><a href="#cb19-20" tabindex="-1"></a><span class="co">#&gt; [1] tictoc_1.2.1   lobstr_1.2.1   dplyr_1.2.1    tibble_3.3.1   purrr_1.2.2   </span></span>
-<span id="cb19-21"><a href="#cb19-21" tabindex="-1"></a><span class="co">#&gt; [6] glyrepr_0.14.0</span></span>
+<span id="cb19-20"><a href="#cb19-20" tabindex="-1"></a><span class="co">#&gt; [1] tictoc_1.2.1  lobstr_1.2.1  dplyr_1.2.1   tibble_3.3.1  purrr_1.2.2  </span></span>
+<span id="cb19-21"><a href="#cb19-21" tabindex="-1"></a><span class="co">#&gt; [6] glyrepr_1.0.0</span></span>
 <span id="cb19-22"><a href="#cb19-22" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb19-23"><a href="#cb19-23" tabindex="-1"></a><span class="co">#&gt; loaded via a namespace (and not attached):</span></span>
 <span id="cb19-24"><a href="#cb19-24" tabindex="-1"></a><span class="co">#&gt;  [1] jsonlite_2.0.0    compiler_4.6.1    tidyselect_1.2.1  stringr_1.6.0    </span></span>
 <span id="cb19-25"><a href="#cb19-25" tabindex="-1"></a><span class="co">#&gt;  [5] jquerylib_0.1.4   yaml_2.3.12       fastmap_1.2.0     R6_2.6.1         </span></span>
 <span id="cb19-26"><a href="#cb19-26" tabindex="-1"></a><span class="co">#&gt;  [9] generics_0.1.4    igraph_2.3.3      knitr_1.51        backports_1.5.1  </span></span>
-<span id="cb19-27"><a href="#cb19-27" tabindex="-1"></a><span class="co">#&gt; [13] checkmate_2.3.4   rstackdeque_1.1.1 bslib_0.11.0      pillar_1.11.1    </span></span>
-<span id="cb19-28"><a href="#cb19-28" tabindex="-1"></a><span class="co">#&gt; [17] rlang_1.3.0       utf8_1.2.6        cachem_1.1.0      stringi_1.8.7    </span></span>
+<span id="cb19-27"><a href="#cb19-27" tabindex="-1"></a><span class="co">#&gt; [13] checkmate_2.3.4   rstackdeque_1.1.1 bslib_0.12.0      pillar_1.11.1    </span></span>
+<span id="cb19-28"><a href="#cb19-28" tabindex="-1"></a><span class="co">#&gt; [17] rlang_1.3.0       utf8_1.2.6        cachem_1.1.0      stringi_1.8.9    </span></span>
 <span id="cb19-29"><a href="#cb19-29" tabindex="-1"></a><span class="co">#&gt; [21] xfun_0.60         sass_0.4.10       otel_0.2.0        cli_3.6.6        </span></span>
 <span id="cb19-30"><a href="#cb19-30" tabindex="-1"></a><span class="co">#&gt; [25] magrittr_2.0.5    digest_0.6.39     lifecycle_1.0.5   prettyunits_1.2.0</span></span>
 <span id="cb19-31"><a href="#cb19-31" tabindex="-1"></a><span class="co">#&gt; [29] vctrs_0.7.3       evaluate_1.0.5    glue_1.8.1        rmarkdown_2.31   </span></span>

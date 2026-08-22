@@ -25,6 +25,34 @@ A glyrepr_structure object.
 \description{
 Convert an object to a glycan structure vector.
 }
+\details{
+Character input assumes the natural absolute configuration for unprefixed
+monosaccharides. Less common configurations use a leading \verb{D-} or \verb{L-}, such
+as \code{D-Fuc}, \code{L-Gul}, and \code{D-Fucf}.
+Alditols use \code{-ol} on the main reducing-end residue, for example
+\verb{Gal(b1-4)GlcNAc-ol(a1-}. The reducing-end anomer annotation remains part of
+the canonical representation.
+
+Character input supports floating-part blocks before the main
+IUPAC-condensed structure. \verb{\{Neu5Ac(a2-3)\}<main>} allows every feasible
+node outside its own component as a candidate parent, while an explicit
+\verb{|<parents>} suffix restricts that domain. Parent indices follow residue
+order in the complete supplied sequence: residues in floating blocks are
+counted left to right before the main glycan, and substituent blocks add no
+indices. A floating part may target another floating component or the main
+tree, but cannot target itself. Indices are remapped to canonical complete
+sequence order in the result. The suffix is a \code{glyrepr} extension to
+curly-brace IUPAC notation. A singleton candidate set is accepted as input
+but fully localizes the attachment, so
+\verb{\{Neu5Ac(a2-3)|2\}Gal(b1-4)GlcNAc(b1-} canonicalizes to the ordinary structure
+\verb{Neu5Ac(a2-3)Gal(b1-4)GlcNAc(b1-}.
+
+Floating substituents use the same leading-brace and candidate-parent syntax.
+For example, \verb{\{6S\}<main>} leaves the sulfated residue unrestricted across all
+residue nodes, \verb{\{6S|1,2\}<main>} restricts it to complete-sequence nodes 1 and
+2, and \verb{\{?S\}<main>} also leaves the carbon position unknown. A singleton
+candidate is normalized into the selected residue's ordinary \code{sub} attribute.
+}
 \examples{
 library(igraph)
 
@@ -43,6 +71,17 @@ as_glycan_structure(list(graph, o_glycan_graph))
 
 # Convert a character vector of IUPAC-condensed strings
 as_glycan_structure(c("GlcNAc(b1-4)GlcNAc(b1-", "Man(a1-2)GlcNAc(b1-"))
+as_glycan_structure(c("D-Fuc(a1-", "L-Gul(b1-", "D-Fucf(a1-"))
+as_glycan_structure("Gal(b1-4)GlcNAc-ol(a1-")
+
+# Parse a floating residue with two candidate parents
+floating_iupac <- paste0(
+  "{Neu5Ac(a2-3)|2,5}",
+  "Gal(b1-4)GlcNAc(b1-2)Man(a1-3)",
+  "[Gal(b1-4)GlcNAc(b1-2)Man(a1-6)]",
+  "Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-"
+)
+as_glycan_structure(floating_iupac)
 
 # Preserve valid elements while replacing an invalid element with NA
 as_glycan_structure(

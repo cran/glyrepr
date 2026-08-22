@@ -4,6 +4,7 @@
 \alias{convert_to_generic}
 \alias{convert_to_generic.character}
 \alias{convert_to_generic.glyrepr_structure}
+\alias{convert_to_generic.igraph}
 \alias{convert_to_generic.glyrepr_composition}
 \title{Convert Monosaccharides to Generic Type}
 \usage{
@@ -13,6 +14,8 @@ convert_to_generic(x)
 
 \method{convert_to_generic}{glyrepr_structure}(x)
 
+\method{convert_to_generic}{igraph}(x)
+
 \method{convert_to_generic}{glyrepr_composition}(x)
 }
 \arguments{
@@ -20,12 +23,14 @@ convert_to_generic(x)
 \itemize{
 \item A character of monosaccharide;
 \item A glycan composition vector ("glyrepr_composition" object);
-\item A glycan structure vector ("glyrepr_structure" object).
+\item A glycan structure vector ("glyrepr_structure" object);
+\item A glycan \code{igraph}.
 }}
 }
 \value{
 A new object of the same class as \code{x}
-with monosaccharides converted to generic type.
+with monosaccharides converted to generic type. Graph input retains its
+vertex IDs and order.
 }
 \description{
 This function converts monosaccharide types of monosaccharide characters,
@@ -38,6 +43,11 @@ There are two types of monosaccharides:
 \itemize{
 \item concrete: e.g. "Gal", "GlcNAc", "Glc", "Fuc", etc.
 \item generic: e.g. "Hex", "HexNAc", "HexA", "HexN", etc.
+Concrete furanose forms such as "Galf" and "GlcfNAc" convert to the same
+generic names as their ringless forms: "Hex" and "HexNAc", respectively.
+Explicit unusual configurations also convert to the same generic names as
+their natural counterparts. For example, "D-Fuc" and "D-Fucf" both convert
+to "dHex".
 }
 
 For the full list of monosaccharides, use \code{\link[=available_monosaccharides]{available_monosaccharides()}}.
@@ -45,7 +55,7 @@ For the full list of monosaccharides, use \code{\link[=available_monosaccharides
 
 \examples{
 # Convert character vectors
-convert_to_generic(c("Gal", "GlcNAc"))
+convert_to_generic(c("Gal", "GlcNAc", "Galf", "GlcfNAc"))
 
 # Convert glycan compositions
 comps <- glycan_composition(

@@ -30,7 +30,8 @@ smap2_structure(.x, .y, .f, ...)
 \item{.y}{A vector of the same length as \code{.x}, or length 1 (will be recycled).}
 
 \item{.f}{A function that takes an igraph object (from \code{.x}) and a value (from \code{.y}) and returns a result.
-Can be a function, purrr-style lambda (\code{~ .x + .y}), or a character string naming a function.}
+Can be a function, purrr-style lambda (\code{~ .x + .y}), or a character string naming a function.
+A structure with floating metadata is passed as one annotated graph.}
 
 \item{...}{Additional arguments passed to \code{.f}.}
 
@@ -53,6 +54,11 @@ Similar to purrr map2 functions, but optimized for glycan structure vectors.
 These functions only compute \code{.f} once for each unique combination of structure and corresponding
 \code{.y} value, then map the results back to the original vector positions. This is much more efficient
 than applying \code{.f} to each element pair individually when there are duplicate structure-value combinations.
+
+\code{smap2_structure()} reuses unchanged graphs and validates and canonicalizes
+changed graphs returned by \code{.f}. A callback that changes vertex identities
+or components of a floating structure must also update its \code{floating_parts}
+and \code{floating_substituents} metadata.
 
 \strong{NA Handling:}
 NA elements in \code{.x} are preserved in the output - the function is not applied to NA positions,

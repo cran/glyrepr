@@ -7,36 +7,43 @@
 get_structure_level(x)
 }
 \arguments{
-\item{x}{A \code{\link[=glycan_structure]{glycan_structure()}} vector.}
+\item{x}{A \code{\link[=glycan_structure]{glycan_structure()}} vector or a glycan \code{igraph}.}
 }
 \value{
-A character scalar containing the structure level for \code{x}.
-If \code{x} is empty or all structures in \code{x} are NA, returns NA_character_.
+For vector input, a character vector containing one structure level
+per element. Missing elements return \code{NA_character_}, and an empty input
+returns \code{character()}. For graph input, a character scalar.
 }
 \description{
-Glycan structures can have four possible levels of resolution:
+Glycan structures can have three possible levels of resolution, determined
+only by linkage and anomer information:
 \itemize{
-\item "intact": All monosaccharides are concrete (e.g. "Man", "GlcNAc"),
-and no linkage or anomer is unknown or ambiguous.
-\item "partial": All monosaccharides are concrete (e.g. "Man", "GlcNAc"),
-at least one linkage or anomer is unknown or ambiguous,
-and at least one linkage or anomer has a non-"?" annotation.
-\item "topological": All monosaccharides are concrete (e.g. "Man", "GlcNAc"),
-and all linkages and anomers are completely unknown ("??-?"/"??").
-\item "basic": All monosaccharides are generic (e.g. "Hex", "HexNAc").
+\item "intact": No linkage or anomer is unknown or ambiguous.
+\item "partial": At least one linkage or anomer is unknown or ambiguous, and
+at least one linkage or anomer contains known information.
+\item "topological": All linkages and anomers are completely unknown
+("??-?"/"??").
 }
 
-Note that in theory you can have a glycan with generic monosaccharides with all linkages determined.
-For example, "Hex(b1-3)HexNAc(a1-" is a valid glycan structure.
-But in reality, this is almost impossible,
-because linkage information is far more difficult to acquire than monosaccharide information.
-This kind of glycan structure is also assigned to "basic" level.
+Floating metadata does not by itself affect the structure level. A floating
+part's attachment linkage is evaluated like an ordinary linkage, while
+candidate-parent ambiguity for floating parts and substituents is independent
+of linkage resolution. Consequently, a glycan with floating metadata is
+regarded as "intact" when every graph-edge and floating-part attachment
+linkage, as well as the reducing-end anomer, is fully specified, even though
+a parent residue remains unlocalized.
 }
 \examples{
 glycan <- as_glycan_structure("Gal(b1-3)GalNAc(a1-")
 get_structure_level(glycan)
 
+floating <- as_glycan_structure(
+  "{Neu5Ac(a2-6)|2,3}Gal(b1-3)GalNAc(a1-"
+)
+get_structure_level(floating)
+
 }
 \seealso{
-\code{\link[=has_linkages]{has_linkages()}}, \code{\link[=get_mono_type]{get_mono_type()}}
+\code{\link[=has_linkages]{has_linkages()}}, \code{\link[=has_floating_parts]{has_floating_parts()}},
+\code{\link[=has_floating_substituents]{has_floating_substituents()}}, \code{\link[=get_mono_type]{get_mono_type()}}
 }

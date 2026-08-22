@@ -45,14 +45,6 @@ is_known_mono <- function(monos) {
 }
 
 
-# Are generic and concrete monosaccharides mixed?
-mix_generic_concrete <- function(monos) {
-  has_generic <- any(monos %in% .unique_no_na(monosaccharides$generic))
-  has_concrete <- any(monos %in% monosaccharides$concrete)
-  sum(as.integer(c(has_generic, has_concrete))) > 1
-}
-
-
 # Is a valid subtituent?
 valid_substituent <- function(sub) {
   # Apply to each element if input is a vector
@@ -66,8 +58,7 @@ valid_substituent <- function(sub) {
     individual_subs <- stringr::str_split(single_sub, ",")[[1]]
 
     # Check if each individual substituent is valid
-    subs_pattern <- substituent_name_pattern()
-    pattern <- stringr::str_glue("^[\\d\\?]({subs_pattern})$")
+    pattern <- substituent_token_pattern(anchored = TRUE)
 
     individual_valid <- purrr::map_lgl(
       individual_subs,
@@ -79,17 +70,23 @@ valid_substituent <- function(sub) {
       return(FALSE)
     }
 
+    is_canonical <- individual_subs ==
+      purrr::map_chr(individual_subs, normalize_substituent_token)
+    if (!all(is_canonical)) {
+      return(FALSE)
+    }
+
     positions <- substituent_position_tokens(individual_subs)
     numeric_positions <- substituent_position_values(individual_subs)
 
     # Check if positions are sorted in ascending order
     is_sorted <- all(numeric_positions == sort(numeric_positions))
 
-    # Check for duplicate known positions (not allowed)
-    known_positions <- positions[positions != "?"]
-    has_duplicates <- any(duplicated(known_positions))
+    has_assignment <- has_conflict_free_assignment(
+      substituent_position_domains(individual_subs)
+    )
 
-    return(is_sorted && !has_duplicates)
+    is_sorted && has_assignment
   })
 }
 
@@ -154,16 +151,25 @@ valid_linkages <- function(linkages) {
 
 
 # Check if any duplicated linkage positions exist.
-# This means the same position of one residue can not be connected to multiple other residues.
-any_dup_linkage_pos <- function(glycan) {
-  for (v in igraph::V(glycan)) {
-    links <- igraph::incident(glycan, v, mode = "out")$linkage
-    pos2 <- stringr::str_split_i(links, stringr::fixed("-"), 2)
-    pos2 <- pos2[pos2 != "?"]
-    pos2 <- pos2[!stringr::str_detect(pos2, stringr::fixed("/"))]
-    if (any(duplicated(pos2))) {
-      return(TRUE)
-    }
+# The same position of one residue cannot connect to multiple other residues.
+any_dup_linkage_pos <- function(
+  glycan,
+  linkages = igraph::edge_attr(glycan, "linkage")
+) {
+  if (length(linkages) < 2L) {
+    return(FALSE)
   }
-  return(FALSE)
+
+  endpoints <- igraph::as_edgelist(glycan, names = FALSE)
+  dash <- regexpr("-", linkages, fixed = TRUE)
+  positions <- substring(linkages, dash + 1L)
+  check <- positions != "?" & !grepl("/", positions, fixed = TRUE)
+  positions <- positions[check]
+
+  if (length(positions) < 2L) {
+    return(FALSE)
+  }
+
+  parents <- endpoints[check, 1L]
+  anyDuplicated(paste(parents, positions, sep = "\r")) > 0L
 }

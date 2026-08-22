@@ -14,7 +14,7 @@
     Condition
       Warning:
       1 structure failed validation and was replaced with `NA`.
-      x Position 2 (`invalid`): Could not parse IUPAC-condensed string: "not-a-structure" i Can't extract anomer information. i Anomer information is required for the reducing-end monosaccharide. i For example, use 'Man(a1-' instead of 'Man'.
+      x Position 2 (`invalid`): Could not parse IUPAC-condensed string: "not-a-structure" i Invalid characters or format in IUPAC-condensed string
 
 # as_glycan_structure keeps strict failures as the default
 
@@ -25,16 +25,6 @@
       i In index: 2.
       Caused by error in `validate_glycan_graph()`:
       ! Unknown monosaccharide: NotAMonosaccharide
-
-# as_glycan_structure keeps vector-level failures strict
-
-    Code
-      as_glycan_structure(iupacs, on_failure = "na")
-    Condition
-      Error in `validate_glycan_graph_vector()`:
-      ! All structures must have the same monosaccharide type.
-      x Found 1 concrete and 1 generic structure(s) in the same vector.
-      i Use `convert_to_generic()` to convert concrete structures to generic type.
 
 # as_glycan_structure validates on_failure
 
@@ -72,3 +62,52 @@
       2 Man(a1-3)[Man(a1-6)]M~     1
       3 Man(a1-3)[Man(a1-6)]M~     1
 
+# print.glyrepr_structure supports n
+
+    <glycan_structure[11]>
+    [1] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [2] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [3] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [4] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [5] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [6] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [7] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [8] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [9] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [10] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    ... (1 more not shown)
+    # Unique structures: 1
+
+---
+
+    <glycan_structure[11]>
+    [1] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [2] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [3] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [4] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [5] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [6] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [7] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [8] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [9] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [10] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    [11] Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-
+    # Unique structures: 1
+
+# get_structure_graphs validates return_list parameter
+
+    Code
+      get_structure_graphs(sv, return_list = FALSE)
+    Condition
+      Error in `get_structure_graphs()`:
+      ! `return_list` must be `TRUE` or `NULL` unless `x` has length 1.
+      i Length of `x`: 2
+
+---
+
+    Code
+      get_structure_graphs(as_glycan_structure(character()), return_list = FALSE)
+    Condition
+      Error in `get_structure_graphs()`:
+      ! `return_list` must be `TRUE` or `NULL` unless `x` has length 1.
+      i Length of `x`: 0

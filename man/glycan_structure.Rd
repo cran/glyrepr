@@ -31,11 +31,17 @@ A glycan structure vector is a vctrs vector with an additional S3 class
 Each glycan structure must satisfy the following constraints:
 \subsection{Graph Structure Requirements}{
 \itemize{
-\item Must be a directed graph with an outward tree structure (reducing end as root)
+\item An ordinary structure must be a directed outward tree (reducing end as
+root).
+\item A structure with floating parts must be one annotated forest containing
+exactly one main outward tree and one outward tree per floating part.
+\item Floating substituents add graph metadata but no vertices or edges.
 \item Must have a graph attribute \code{anomer} in the format "a1" or "b1"
 \itemize{
 \item Unknown parts can be represented with "?", e.g., "?1", "a?", "??"
 }
+\item May have a graph attribute \code{alditol}, containing one logical value.
+Missing attributes are treated as \code{FALSE} and canonicalized explicitly.
 }
 }
 
@@ -45,13 +51,15 @@ Each glycan structure must satisfy the following constraints:
 \itemize{
 \item Generic names: Hex, HexNAc, dHex, NeuAc, etc.
 \item Concrete names: Glc, Gal, Man, GlcNAc, etc.
-\item Cannot mix generic and concrete names
+\item Generic and concrete names may be mixed
 \item NA values are not allowed
 }
 \item \code{sub}: Substituent information
 \itemize{
 \item Single substituent format: "xY" (x = position, Y = substituent name),
 e.g., "2Ac", "3S"
+\item Ambiguous substituent positions use slash-separated alternatives,
+e.g., "4/6S", "3/4/6Ac"
 \item Multiple substituents separated by commas and ordered by position,
 e.g., "3Me,4Ac", "2S,6P"
 \item Unknown substituent positions can be repeated, e.g., "?Me,?S"
@@ -71,15 +79,67 @@ e.g., "3Me,4Ac", "2S,6P"
 }
 }
 }
+
+\subsection{Floating Parts}{
+
+Floating parts are disconnected substructures whose attachment to the main
+tree is not fully localized. They are declared by the \code{floating_parts} graph
+attribute, a list with one entry per floating component. Each entry contains:
+\itemize{
+\item \code{root}: the integer vertex index of the floating component root.
+\item \code{nodes}: all integer vertex indices in the floating component, ordered as
+the component appears in the complete IUPAC-condensed sequence.
+\item \code{linkage}: the virtual linkage from that root to its unresolved parent.
+\item \code{parents}: integer vertex indices outside the floating component. An empty
+integer vector means that all feasible nodes outside the component are
+candidates.
+}
+
+Canonical graphs always contain \code{nodes}. For backward compatibility, input
+graphs may omit it; \code{\link[=glycan_structure]{glycan_structure()}} derives the component membership
+before validation and stores \code{nodes} in the canonical result.
+
+During canonicalization, a floating part with exactly one effective
+candidate parent is attached to that parent as an ordinary graph edge.
+Attachments between floating components merge their \code{nodes} metadata and
+can resolve further singleton domains. Only unresolved attachments retain
+floating metadata, where the virtual attachment is metadata rather than an
+edge and contributes to the canonical structure key.
+}
+
+\subsection{Floating Substituents}{
+
+A floating substituent has known chemistry but an unresolved parent residue.
+It is declared by the \code{floating_substituents} graph attribute, a list with
+one entry per substituent. Each entry contains:
+\itemize{
+\item \code{substituent}: one canonical substituent token such as \code{"6S"}, \code{"4/6Ac"},
+or \code{"?Me"}.
+\item \code{parents}: integer residue vertex indices in the complete structure. An
+empty integer vector means that all feasible residue nodes are candidates.
+}
+
+A singleton candidate is normalized into the corresponding vertex's \code{sub}
+attribute. Candidate parents must permit a conflict-free assignment of
+occupied carbon positions. Floating-part assignments must also be acyclic
+and connect every floating component to the main tree.
+}
 }
 
 \section{Node and Edge Order}{
-The indices of vertices and linkages in a glycan correspond directly to their
-order in the IUPAC-condensed string, which is printed when you print a
-\code{\link[=glycan_structure]{glycan_structure()}}.
+For an ordinary tree, the indices of vertices and linkages correspond
+directly to their order in the printed IUPAC-condensed string.
 For example, for the glycan \verb{Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-},
 the vertices are "Man", "Man", "Man", "GlcNAc", "GlcNAc",
 and the linkages are "a1-3", "a1-6", "b1-4", "b1-4".
+
+For a floating structure, floating-component vertices and edges precede the
+main tree, exactly as their brace-enclosed components precede the main glycan
+in the complete IUPAC-condensed string. Parent indices written inside braces
+and stored in \code{floating_parts$parents} or \code{floating_substituents$parents}
+use this same global order. Substituent blocks contribute no vertex indices.
+A virtual floating attachment is not an edge, and a floating substituent is
+not a vertex.
 }
 
 \section{NA Support}{
@@ -132,7 +192,19 @@ complex_graph$anomer <- "b1"
 complex_struct <- glycan_structure(complex_graph)
 print(complex_struct)
 
-# Example 4: Check if object is a glycan structure
+# Example 4: Parse a floating part with explicit candidate parents
+floating <- as_glycan_structure(
+  "{Neu5Ac(a2-3)|2,3}Gal(b1-3)[Gal(b1-4)]GlcNAc(a1-"
+)
+structure_floating_parts(floating)
+
+# Example 5: Parse a substituent with two candidate residues
+floating_sub <- as_glycan_structure(
+  "{6S|1,2}Gal(a1-3)Glc(a1-3)Man(a1-"
+)
+get_structure_graphs(floating_sub)$floating_substituents
+
+# Example 6: Check if object is a glycan structure
 is_glycan_structure(simple_struct)  # TRUE
 is_glycan_structure(graph)          # FALSE
 

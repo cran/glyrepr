@@ -6,9 +6,21 @@ test_that("get mono type of structures", {
   expect_equal(get_mono_type(glycan), "generic")
 })
 
+test_that("get mono type of glycan graphs", {
+  concrete <- get_structure_graphs(n_glycan_core(mono_type = "concrete"))
+  generic <- get_structure_graphs(n_glycan_core(mono_type = "generic"))
+
+  expect_identical(get_mono_type(concrete), "concrete")
+  expect_identical(get_mono_type(generic), "generic")
+})
+
 test_that("get mono type of character vector", {
   expect_equal(get_mono_type(c("Gal", "GlcNAc")), c("concrete", "concrete"))
   expect_equal(get_mono_type(c("Hex", "HexNAc")), c("generic", "generic"))
+  expect_identical(
+    get_mono_type(c(first = "Gal", second = "Hex")),
+    c(first = "concrete", second = "generic")
+  )
 })
 
 test_that("get_mono_type of special monosaccharides", {
@@ -31,8 +43,36 @@ test_that("get mono type of composition", {
   )
   comp_concrete <- glycan_composition(c(Gal = 4, GlcNAc = 1))
 
-  expect_equal(get_mono_type(comp_generic), "generic")
+  expect_equal(get_mono_type(comp_generic), c("generic", "generic"))
   expect_equal(get_mono_type(comp_concrete), "concrete")
+})
+
+test_that("get_mono_type reports mixed elements and preserves names", {
+  structures <- as_glycan_structure(c(
+    concrete = "Gal(b1-3)GalNAc(a1-",
+    generic = "Hex(b1-3)HexNAc(a1-",
+    mixed = "Hex(b1-3)GalNAc(a1-",
+    missing = NA_character_
+  ))
+  compositions <- glycan_composition(
+    concrete = c(Gal = 1, GalNAc = 1),
+    generic = c(Hex = 1, HexNAc = 1),
+    mixed = c(Hex = 1, GalNAc = 1),
+    missing = NA
+  )
+
+  expected <- c(
+    concrete = "concrete",
+    generic = "generic",
+    mixed = "mixed",
+    missing = NA_character_
+  )
+  expect_identical(get_mono_type(structures), expected)
+  expect_identical(get_mono_type(compositions), unname(expected))
+  expect_identical(
+    get_mono_type(get_structure_graphs(structures[[3]])),
+    "mixed"
+  )
 })
 
 test_that("get_mono_type of composition with substituents", {
@@ -83,10 +123,63 @@ test_that("convert_to_generic works with glycan structures", {
   )
 })
 
+test_that("convert_to_generic converts mixed structures", {
+  glycan <- as_glycan_structure("Hex(b1-3)GalNAc(a1-")
+  result <- convert_to_generic(glycan)
+
+  expect_identical(as.character(result), "Hex(b1-3)HexNAc(a1-")
+  expect_identical(get_mono_type(result), "generic")
+})
+
+test_that("convert_to_generic handles mixed structure vectors", {
+  structures <- as_glycan_structure(c(
+    concrete = "Gal(b1-3)GalNAc(a1-",
+    generic = "Hex(b1-3)HexNAc(a1-",
+    mixed = "Hex(b1-3)GalNAc(a1-",
+    missing = NA_character_
+  ))
+
+  result <- convert_to_generic(structures)
+
+  expect_identical(
+    get_mono_type(result),
+    c(
+      concrete = "generic",
+      generic = "generic",
+      mixed = "generic",
+      missing = NA_character_
+    )
+  )
+  expect_identical(names(result), names(structures))
+})
+
+test_that("convert_to_generic works with glycan graphs without reordering", {
+  structure <- as_glycan_structure(
+    "{Neu5Ac(a2-6)|2,3}Gal(b1-3)GalNAc(a1-"
+  )
+  graph <- get_structure_graphs(structure)
+  names_before <- igraph::V(graph)$name
+  edges_before <- igraph::as_edgelist(graph, names = FALSE)
+
+  result <- convert_to_generic(graph)
+
+  expect_s3_class(result, "igraph")
+  expect_identical(igraph::V(result)$name, names_before)
+  expect_identical(igraph::as_edgelist(result, names = FALSE), edges_before)
+  expect_identical(igraph::V(result)$mono, c("NeuAc", "Hex", "HexNAc"))
+  expect_identical(result$floating_parts, graph$floating_parts)
+})
+
 test_that("convert_to_generic with already generic structure returns same", {
   glycan <- n_glycan_core(mono_type = "generic")
   result <- convert_to_generic(glycan)
   expect_identical(result, glycan)
+})
+
+test_that("convert_to_generic preserves empty structure vectors", {
+  glycan <- as_glycan_structure(character())
+
+  expect_identical(convert_to_generic(glycan), glycan)
 })
 
 test_that("convert_to_generic works with glycan compositions", {
@@ -95,6 +188,32 @@ test_that("convert_to_generic works with glycan compositions", {
 
   expect_true(is_glycan_composition(comp_generic))
   expect_equal(as.character(comp_generic), "Hex(2)HexNAc(1)")
+})
+
+test_that("convert_to_generic converts and aggregates mixed compositions", {
+  comp <- glycan_composition(c(Hex = 2, Gal = 1, Glc = 3, GalNAc = 1))
+  result <- convert_to_generic(comp)
+
+  expect_identical(as.character(result), "Hex(6)HexNAc(1)")
+  expect_identical(get_mono_type(result), "generic")
+})
+
+test_that("convert_to_generic handles mixed composition vectors", {
+  comps <- glycan_composition(
+    c(Gal = 1),
+    c(Hex = 1),
+    c(Hex = 1, Gal = 2),
+    NA
+  )
+
+  result <- convert_to_generic(comps)
+
+  expect_identical(
+    get_mono_type(result),
+    c("generic", "generic", "generic", NA_character_)
+  )
+  expect_identical(as.character(result[1:3]), c("Hex(1)", "Hex(1)", "Hex(3)"))
+  expect_identical(is.na(result), c(FALSE, FALSE, FALSE, TRUE))
 })
 
 test_that("convert_to_generic works with glycan compositions with substituents", {
@@ -167,12 +286,12 @@ test_that("convert_to_generic with all NA structures", {
   expect_true(all(is.na(result)))
 })
 
-test_that("get_mono_type skips NA compositions", {
+test_that("get_mono_type aligns NA compositions", {
   concrete <- glycan_composition(NA, c(Gal = 1))
   generic <- glycan_composition(NA, c(Hex = 1))
   all_na <- glycan_composition(NA, NA)
 
-  expect_equal(get_mono_type(concrete), "concrete")
-  expect_equal(get_mono_type(generic), "generic")
-  expect_true(is.na(get_mono_type(all_na)))
+  expect_identical(get_mono_type(concrete), c(NA, "concrete"))
+  expect_identical(get_mono_type(generic), c(NA, "generic"))
+  expect_identical(get_mono_type(all_na), c(NA_character_, NA_character_))
 })

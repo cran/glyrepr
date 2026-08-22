@@ -172,7 +172,7 @@ patrick::with_parameters_test_that(
     graph$anomer <- "b1"
     expect_no_error(glycan_structure(graph))
   },
-  sub = c("6S", "9Ac", "2P", "?S")
+  sub = c("6S", "9Ac", "2P", "?S", "4/6S", "3/4/6Ac")
 )
 
 
@@ -207,6 +207,21 @@ test_that("duplicate positions in substituents are not allowed", {
   graph$anomer <- "a1"
   expect_error(glycan_structure(graph), "Unknown substituent")
 })
+
+
+patrick::with_parameters_test_that(
+  "ambiguous substituent positions must be canonical and assignable",
+  {
+    skip_on_old_win()
+    graph <- igraph::make_empty_graph(n = 1)
+    igraph::V(graph)$mono <- "Glc"
+    igraph::V(graph)$sub <- sub
+    igraph::E(graph)$linkage <- character(0)
+    graph$anomer <- "a1"
+    expect_error(glycan_structure(graph), "Unknown substituent")
+  },
+  sub = c("6/4S", "4/4S", "4Ac,4/6S,6Me")
+)
 
 
 test_that("duplicate unknown substituent positions are allowed", {
@@ -335,6 +350,17 @@ test_that("validating duplicated linkage positions", {
 })
 
 
+test_that("the same linkage position on different residues is valid", {
+  graph <- igraph::make_graph(~ 1 - +2, 1 - +3, 2 - +4)
+  igraph::V(graph)$mono <- c("GalNAc", "Gal", "Neu5Ac", "GlcNAc")
+  igraph::V(graph)$sub <- ""
+  igraph::E(graph)$linkage <- c("b1-4", "a2-3", "b1-3")
+  graph$anomer <- "a1"
+
+  expect_no_error(glycan_structure(graph))
+})
+
+
 test_that("duplicated ? linkages are OK", {
   graph <- igraph::make_graph(~ 1 - +2, 1 - +3)
   igraph::V(graph)$mono <- c("GalNAc", "Gal", "Neu5Ac")
@@ -357,17 +383,16 @@ test_that("duplicated x/y linkages are OK", {
 })
 
 
-test_that("validating mixed generic and concrete monosaccharides", {
+test_that("mixed generic and concrete monosaccharides are valid", {
   graph <- igraph::make_tree(3, children = 2, mode = "out")
   igraph::V(graph)$mono <- c("Hex", "GlcNAc", "Hex")
   igraph::V(graph)$sub <- ""
-  igraph::E(graph)$linkage <- "b1-4"
+  igraph::E(graph)$linkage <- c("b1-3", "b1-4")
   graph$anomer <- "a1"
 
-  expect_error(
-    glycan_structure(graph),
-    "Monosaccharides must be either all generic or all concrete"
-  )
+  result <- glycan_structure(graph)
+  expect_s3_class(result, "glyrepr_structure")
+  expect_identical(get_mono_type(result), "mixed")
 })
 
 
@@ -570,12 +595,13 @@ test_that("as_glycan_structure keeps strict failures as the default", {
   )
 })
 
-test_that("as_glycan_structure keeps vector-level failures strict", {
+test_that("as_glycan_structure accepts mixed vector types with recovery", {
   iupacs <- c(concrete = "Glc(?1-", generic = "Hex(??-")
 
-  expect_snapshot(
-    error = TRUE,
-    as_glycan_structure(iupacs, on_failure = "na")
+  result <- as_glycan_structure(iupacs, on_failure = "na")
+  expect_identical(
+    get_mono_type(result),
+    c(concrete = "concrete", generic = "generic")
   )
 })
 
@@ -695,6 +721,13 @@ test_that("obj_print_footer.glyrepr_structure handles empty vector", {
   expect_match(output, "# Unique structures: 0")
 })
 
+test_that("print.glyrepr_structure supports n", {
+  structures <- rep(n_glycan_core(), 11)
+
+  expect_snapshot_output(print(structures))
+  expect_snapshot_output(print(structures, n = Inf))
+})
+
 # Tests for get_structure_graphs ----------------------------------------------
 
 test_that("get_structure_graphs extracts individual structures correctly", {
@@ -737,6 +770,10 @@ test_that("get_structure_graphs return_list parameter works correctly", {
   # Test explicit return_list = FALSE
   result_list_false <- get_structure_graphs(sv[1], return_list = FALSE)
   expect_s3_class(result_list_false, "igraph")
+
+  empty <- as_glycan_structure(character())
+  expect_identical(get_structure_graphs(empty), list())
+  expect_identical(get_structure_graphs(empty, return_list = TRUE), list())
 })
 
 test_that("get_structure_graphs validates return_list parameter", {
@@ -744,10 +781,16 @@ test_that("get_structure_graphs validates return_list parameter", {
   glycan2 <- n_glycan_core()
   sv <- c(glycan1, glycan2)
 
-  # Should error when return_list = FALSE but length > 1
-  expect_error(
+  expect_snapshot(
     get_structure_graphs(sv, return_list = FALSE),
-    "return_list.*must be.*TRUE.*NULL.*length greater than 1"
+    error = TRUE
+  )
+  expect_snapshot(
+    get_structure_graphs(
+      as_glycan_structure(character()),
+      return_list = FALSE
+    ),
+    error = TRUE
   )
 })
 
@@ -1263,36 +1306,31 @@ test_that("glycan_structure accepts multiple generic structures", {
   expect_equal(length(sv), 2)
 })
 
-test_that("glycan_structure rejects mixing concrete and generic structures", {
+test_that("glycan_structure accepts concrete and generic structures", {
   graph1 <- create_simple_glycan_graph(c("Glc", "Gal"), "b1-4") # concrete
   graph2 <- create_simple_glycan_graph(c("Hex", "HexNAc"), "b1-4") # generic
-  expect_error(
-    glycan_structure(graph1, graph2),
-    "All structures must have the same monosaccharide type"
-  )
+  sv <- glycan_structure(graph1, graph2)
+  expect_identical(get_mono_type(sv), c("concrete", "generic"))
 })
 
-test_that("c() rejects combining concrete and generic structure vectors", {
+test_that("c() combines concrete and generic structure vectors", {
   sv1 <- o_glycan_core_1() # concrete: Gal, GalNAc
   sv2 <- n_glycan_core(mono_type = "generic") # generic: Hex, HexNAc
-  expect_error(
-    c(sv1, sv2),
-    "All structures must have the same monosaccharide type"
-  )
+  expect_identical(get_mono_type(c(sv1, sv2)), c("concrete", "generic"))
 })
 
 test_that("get_mono_type returns same type for all structures in vector", {
   graph1 <- create_simple_glycan_graph(c("Glc", "Gal"), "b1-4")
   graph2 <- create_simple_glycan_graph(c("Man", "GlcNAc"), "b1-4")
   sv <- glycan_structure(graph1, graph2)
-  expect_equal(get_mono_type(sv), "concrete")
+  expect_equal(get_mono_type(sv), c("concrete", "concrete"))
 })
 
 test_that("get_mono_type returns same type for generic structures", {
   graph1 <- create_simple_glycan_graph(c("Hex", "HexNAc"), "b1-4")
   graph2 <- create_simple_glycan_graph(c("Hex", "dHex"), "b1-6")
   sv <- glycan_structure(graph1, graph2)
-  expect_equal(get_mono_type(sv), "generic")
+  expect_equal(get_mono_type(sv), c("generic", "generic"))
 })
 
 # Tests for [[<- operation (issue #11) -----------------------------------------
@@ -1499,8 +1537,7 @@ test_that("all glyrepr_structure functions preserve names", {
   expect_equal(names(count_mono(structures)), c("A", "B", "C"))
   expect_equal(names(structure_to_iupac(structures)), c("A", "B", "C"))
 
-  # get_structure_level() returns one scalar level for the whole vector.
-  expect_null(names(get_structure_level(structures)))
+  expect_equal(names(get_structure_level(structures)), c("A", "B", "C"))
 
   # Accessor functions (return list)
   expect_equal(names(get_structure_graphs(structures)), c("A", "B", "C"))
@@ -1513,12 +1550,6 @@ test_that("all glyrepr_structure functions preserve names", {
   structs_concrete <- c(o_glycan_core_1(), n_glycan_core())
   names(structs_concrete) <- c("X", "Y")
   expect_equal(names(convert_to_generic(structs_concrete)), c("X", "Y"))
-
-  # Level reduction
-  expect_equal(
-    names(reduce_structure_level(structures, "topological")),
-    c("A", "B", "C")
-  )
 
   # Vector combination
   expect_equal(names(c(structures)), c("A", "B", "C"))
@@ -1671,42 +1702,18 @@ test_that("convert_to_generic works on N-glycan core", {
   expect_equal(get_mono_type(converted), "generic")
 })
 
-# Tests for reduce_structure_level with NA -----------------------------------------
-
-test_that("reduce_structure_level handles structures with NA", {
-  # Create structures manually to avoid smap issues with NA
-  # The valid structure should work, and NA should be preserved
-  structs <- c(o_glycan_core_1(), NA)
-  # Note: reduce_structure_level uses smap which currently doesn't handle NA
-  # This test verifies the function works for non-NA structures
-  reduced_valid <- reduce_structure_level(
-    o_glycan_core_1(),
-    to_level = "topological"
-  )
-  expect_equal(get_structure_level(reduced_valid), "topological")
-})
-
-test_that("reduce_structure_level handles NA when reducing to basic", {
-  # Note: reduce_structure_level uses smap which currently doesn't handle NA
-  # This test verifies the function works for non-NA structures
-  reduced_valid <- reduce_structure_level(o_glycan_core_1(), to_level = "basic")
-  expect_equal(get_structure_level(reduced_valid), "basic")
-})
-
 # Tests for get_mono_type with NA --------------------------------------------------
 
 test_that("get_mono_type handles mixed NA and valid structures", {
   structs <- c(o_glycan_core_1(), NA)
   types <- get_mono_type(structs)
-  expect_equal(length(types), 1) # Returns scalar for glyrepr_structure
-  expect_equal(types, "concrete")
+  expect_identical(types, c("concrete", NA_character_))
 })
 
 test_that("get_mono_type handles all NA structures", {
   structs <- glycan_structure(NA, NA)
   types <- get_mono_type(structs)
-  expect_equal(length(types), 1) # Returns scalar for glyrepr_structure
-  expect_true(is.na(types))
+  expect_identical(types, c(NA_character_, NA_character_))
 })
 
 # Tests for rep with NA ------------------------------------------------------------
@@ -1966,13 +1973,13 @@ test_that("get_structure_level preserves NA structures", {
 
   result <- get_structure_level(structures)
 
-  expect_equal(result, "intact")
+  expect_identical(result, c("intact", NA_character_))
 })
 
-test_that("reduce_structure_level skips NA structures when checking level rank", {
+test_that("remove_linkages preserves NA structures", {
   structures <- c(o_glycan_core_1(), glycan_structure(NA))
 
-  result <- reduce_structure_level(structures, "topological")
+  result <- remove_linkages(structures)
 
   expect_false(has_linkages(result[1]))
   expect_true(is.na(result[2]))

@@ -6,6 +6,7 @@
 get_mono_color <- function(mono) {
   # Extract base monosaccharide name (without substituents)
   base_mono <- .extract_base_mono(mono)
+  base_mono <- .ringless_monosaccharide(base_mono)
 
   dplyr::recode_values(
     base_mono,
@@ -117,12 +118,12 @@ replace_monos_with_colored <- function(text, mono_names) {
     # For example, "Neu5Ac" should match in "Neu5Ac9Ac"
     if (mono %in% c("Neu5Ac", "Neu5Gc", "Neu")) {
       # For sialic acids, match the base name followed by optional substituents
-      pattern <- paste0("\\b", mono, "(?=[0-9]|\\(|$)")
+      pattern <- paste0("\\b", mono, "(?=[0-9]|-ol|\\(|$)")
       result <- stringr::str_replace_all(result, pattern, colored_mono)
     } else {
       # For other monosaccharides, use more flexible matching
       # Match the mono name followed by optional substituents (digits + letters)
-      pattern <- paste0("\\b", mono, "(?=[0-9]|\\(|$)")
+      pattern <- paste0("\\b", mono, "(?=[0-9]|-ol|\\(|$)")
       result <- stringr::str_replace_all(result, pattern, colored_mono)
     }
   }
@@ -141,15 +142,19 @@ add_gray_linkages <- function(iupac_text) {
 
   result <- iupac_text
 
-  # Pattern 1: Complete linkages like (b1-3), (a1-6)
-  complete_pattern <- "\\(([ab?]\\d*-\\d*)\\)"
+  # Pattern 1: Complete linkages like (b1-3), (??-?), (a2-3/6)
+  complete_pattern <- paste0(
+    "\\((",
+    linkage_pattern(anchored = FALSE),
+    ")\\)"
+  )
   result <- stringr::str_replace_all(result, complete_pattern, function(match) {
     linkage <- stringr::str_sub(match, 2, -2) # Remove parentheses
     paste0("(", gray_style(linkage), ")")
   })
 
-  # Pattern 2: Incomplete linkages at end like (a1-, (?1-
-  incomplete_pattern <- "\\(([ab?]\\d*-)$"
+  # Pattern 2: Incomplete reducing-end annotations like (a1-, (?1-, (??-
+  incomplete_pattern <- "\\(([ab?][12?]-)$"
   result <- stringr::str_replace_all(
     result,
     incomplete_pattern,
@@ -187,24 +192,42 @@ colorize_iupac_string <- function(iupac_text, mono_names) {
   # Use a simplified version of the substituent extraction logic
   # This avoids circular dependency with iupac-to-structure.R
 
+  unusual_mono <- .match_unusual_configuration_monosaccharide(mono)
+  if (!is.na(unusual_mono)) {
+    natural_mono <- .natural_configuration_monosaccharide(unusual_mono)
+    suffix <- stringr::str_remove(mono, stringr::fixed(unusual_mono))
+    return(.extract_base_mono(paste0(natural_mono, suffix)))
+  }
+
   # Handle special cases first
   if (mono == "Neu5Ac") {
     return("Neu5Ac")
   } else if (stringr::str_starts(mono, "Neu5Ac") && nchar(mono) > 6) {
     return("Neu5Ac")
+  } else if (mono == "Neuf5Ac") {
+    return("Neuf5Ac")
+  } else if (stringr::str_starts(mono, "Neuf5Ac") && nchar(mono) > 7) {
+    return("Neuf5Ac")
   } else if (mono == "Neu5Gc") {
     return("Neu5Gc")
   } else if (stringr::str_starts(mono, "Neu5Gc") && nchar(mono) > 6) {
     return("Neu5Gc")
+  } else if (mono == "Neuf5Gc") {
+    return("Neuf5Gc")
+  } else if (stringr::str_starts(mono, "Neuf5Gc") && nchar(mono) > 7) {
+    return("Neuf5Gc")
   } else if (mono == "Neu4Ac5Ac") {
     return("Neu5Ac")
+  } else if (mono == "Neuf4Ac5Ac") {
+    return("Neuf5Ac")
   } else if (mono == "Neu4Ac5Gc") {
     return("Neu5Gc")
+  } else if (mono == "Neuf4Ac5Gc") {
+    return("Neuf5Gc")
   }
 
   # For other monosaccharides, remove substituents
-  subs_pattern <- substituent_name_pattern(longest_first = TRUE)
-  single_sub_pattern <- stringr::str_glue("[1-9\\?]({subs_pattern})")
+  single_sub_pattern <- substituent_token_pattern(longest_first = TRUE)
 
   # Find all substituents
   all_subs <- stringr::str_extract_all(mono, single_sub_pattern)[[1]]

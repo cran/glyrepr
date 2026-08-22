@@ -15,19 +15,27 @@
 #' Each glycan structure must satisfy the following constraints:
 #'
 #' ## Graph Structure Requirements
-#' - Must be a directed graph with an outward tree structure (reducing end as root)
+#' - An ordinary structure must be a directed outward tree (reducing end as
+#'   root).
+#' - A structure with floating parts must be one annotated forest containing
+#'   exactly one main outward tree and one outward tree per floating part.
+#' - Floating substituents add graph metadata but no vertices or edges.
 #' - Must have a graph attribute `anomer` in the format "a1" or "b1"
 #'   - Unknown parts can be represented with "?", e.g., "?1", "a?", "??"
+#' - May have a graph attribute `alditol`, containing one logical value.
+#'   Missing attributes are treated as `FALSE` and canonicalized explicitly.
 #'
 #' ## Node Attributes
 #' - `mono`: Monosaccharide names, must be known monosaccharide types
 #'   - Generic names: Hex, HexNAc, dHex, NeuAc, etc.
 #'   - Concrete names: Glc, Gal, Man, GlcNAc, etc.
-#'   - Cannot mix generic and concrete names
+#'   - Generic and concrete names may be mixed
 #'   - NA values are not allowed
 #' - `sub`: Substituent information
 #'   - Single substituent format: "xY" (x = position, Y = substituent name),
 #'     e.g., "2Ac", "3S"
+#'   - Ambiguous substituent positions use slash-separated alternatives,
+#'     e.g., "4/6S", "3/4/6Ac"
 #'   - Multiple substituents separated by commas and ordered by position,
 #'     e.g., "3Me,4Ac", "2S,6P"
 #'   - Unknown substituent positions can be repeated, e.g., "?Me,?S"
@@ -40,14 +48,62 @@
 #'   - Partially unknown positions: "a1-3/6", "a1-3/6/9"
 #'   - NA values are not allowed
 #'
+#' ## Floating Parts
+#'
+#' Floating parts are disconnected substructures whose attachment to the main
+#' tree is not fully localized. They are declared by the `floating_parts` graph
+#' attribute, a list with one entry per floating component. Each entry contains:
+#'
+#' - `root`: the integer vertex index of the floating component root.
+#' - `nodes`: all integer vertex indices in the floating component, ordered as
+#'   the component appears in the complete IUPAC-condensed sequence.
+#' - `linkage`: the virtual linkage from that root to its unresolved parent.
+#' - `parents`: integer vertex indices outside the floating component. An empty
+#'   integer vector means that all feasible nodes outside the component are
+#'   candidates.
+#'
+#' Canonical graphs always contain `nodes`. For backward compatibility, input
+#' graphs may omit it; [glycan_structure()] derives the component membership
+#' before validation and stores `nodes` in the canonical result.
+#'
+#' During canonicalization, a floating part with exactly one effective
+#' candidate parent is attached to that parent as an ordinary graph edge.
+#' Attachments between floating components merge their `nodes` metadata and
+#' can resolve further singleton domains. Only unresolved attachments retain
+#' floating metadata, where the virtual attachment is metadata rather than an
+#' edge and contributes to the canonical structure key.
+#'
+#' ## Floating Substituents
+#'
+#' A floating substituent has known chemistry but an unresolved parent residue.
+#' It is declared by the `floating_substituents` graph attribute, a list with
+#' one entry per substituent. Each entry contains:
+#'
+#' - `substituent`: one canonical substituent token such as `"6S"`, `"4/6Ac"`,
+#'   or `"?Me"`.
+#' - `parents`: integer residue vertex indices in the complete structure. An
+#'   empty integer vector means that all feasible residue nodes are candidates.
+#'
+#' A singleton candidate is normalized into the corresponding vertex's `sub`
+#' attribute. Candidate parents must permit a conflict-free assignment of
+#' occupied carbon positions. Floating-part assignments must also be acyclic
+#' and connect every floating component to the main tree.
+#'
 #' # Node and Edge Order
 #'
-#' The indices of vertices and linkages in a glycan correspond directly to their
-#' order in the IUPAC-condensed string, which is printed when you print a
-#' [glyrepr::glycan_structure()].
+#' For an ordinary tree, the indices of vertices and linkages correspond
+#' directly to their order in the printed IUPAC-condensed string.
 #' For example, for the glycan `Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-`,
 #' the vertices are "Man", "Man", "Man", "GlcNAc", "GlcNAc",
 #' and the linkages are "a1-3", "a1-6", "b1-4", "b1-4".
+#'
+#' For a floating structure, floating-component vertices and edges precede the
+#' main tree, exactly as their brace-enclosed components precede the main glycan
+#' in the complete IUPAC-condensed string. Parent indices written inside braces
+#' and stored in `floating_parts$parents` or `floating_substituents$parents`
+#' use this same global order. Substituent blocks contribute no vertex indices.
+#' A virtual floating attachment is not an edge, and a floating substituent is
+#' not a vertex.
 #'
 #' # NA Support
 #'
@@ -104,7 +160,19 @@
 #' complex_struct <- glycan_structure(complex_graph)
 #' print(complex_struct)
 #'
-#' # Example 4: Check if object is a glycan structure
+#' # Example 4: Parse a floating part with explicit candidate parents
+#' floating <- as_glycan_structure(
+#'   "{Neu5Ac(a2-3)|2,3}Gal(b1-3)[Gal(b1-4)]GlcNAc(a1-"
+#' )
+#' structure_floating_parts(floating)
+#'
+#' # Example 5: Parse a substituent with two candidate residues
+#' floating_sub <- as_glycan_structure(
+#'   "{6S|1,2}Gal(a1-3)Glc(a1-3)Man(a1-"
+#' )
+#' get_structure_graphs(floating_sub)$floating_substituents
+#'
+#' # Example 6: Check if object is a glycan structure
 #' is_glycan_structure(simple_struct)  # TRUE
 #' is_glycan_structure(graph)          # FALSE
 #'
@@ -160,7 +228,7 @@ glycan_structure <- function(...) {
       canonicalize_glycan_graph()
   })
 
-  # Validate that all structures have the same mono_type
+  # Validate the graph-list container.
   validate_glycan_graph_vector(processed_graphs)
 
   # Use IUPAC codes directly as data for the glycan_structure vctrs vector
@@ -364,6 +432,12 @@ format_glycan_structure_subset <- function(x, indices, colored = TRUE) {
 
 
 #' @export
+print.glyrepr_structure <- function(x, ..., n = 10) {
+  vctrs::obj_print(x, ..., max_n = n)
+  invisible(x)
+}
+
+#' @export
 obj_print_footer.glyrepr_structure <- function(x, ...) {
   cat(
     "# Unique structures: ",
@@ -445,35 +519,9 @@ vec_ptype2.glyrepr_structure.glyrepr_structure <- function(x, y, ...) {
   graphs_x <- attr(x, "graphs")
   graphs_y <- attr(y, "graphs")
 
-  # Validate each vector separately
+  # Validate each graph-list container separately.
   validate_glycan_graph_vector(graphs_x, label = "Vector 1")
   validate_glycan_graph_vector(graphs_y, label = "Vector 2")
-
-  # Check that both vectors have the same mono_type
-  if (length(graphs_x) > 0 && length(graphs_y) > 0) {
-    mono_types_x <- purrr::map_chr(graphs_x, get_graph_mono_type)
-    mono_types_y <- purrr::map_chr(graphs_y, get_graph_mono_type)
-    unique_types_x <- unique(mono_types_x)
-    unique_types_y <- unique(mono_types_y)
-
-    if (
-      length(unique_types_x) > 0 &&
-        length(unique_types_y) > 0 &&
-        unique_types_x[[1]] != unique_types_y[[1]]
-    ) {
-      concrete_count_x <- sum(mono_types_x == "concrete")
-      generic_count_x <- sum(mono_types_x == "generic")
-      concrete_count_y <- sum(mono_types_y == "concrete")
-      generic_count_y <- sum(mono_types_y == "generic")
-
-      cli::cli_abort(c(
-        "All structures must have the same monosaccharide type.",
-        "x" = "Vector 1 has {.val {concrete_count_x}} concrete and {.val {generic_count_x}} generic structure(s).",
-        "x" = "Vector 2 has {.val {concrete_count_y}} concrete and {.val {generic_count_y}} generic structure(s).",
-        "i" = "Use {.fn convert_to_generic} to convert concrete structures to generic type."
-      ))
-    }
-  }
 
   # Combine graphs from both vectors (union by IUPAC name as key)
   combined_graphs <- c(graphs_x, graphs_y)
@@ -551,8 +599,8 @@ glycan_structure_from_iupac_character <- function(x) {
 #' Canonicalize and validate parsed IUPAC-condensed graphs
 #'
 #' Validates each parsed graph, reorders vertices and edges to the canonical
-#' IUPAC-condensed order, validates vector-level monosaccharide-type
-#' consistency, and deduplicates graph storage by canonical IUPAC string.
+#' IUPAC-condensed order and deduplicates graph storage by canonical IUPAC
+#' string.
 #'
 #' @param graphs A list of parsed igraph graph objects.
 #' @returns A list with canonical `iupacs` and unique named `graphs`.
@@ -657,6 +705,33 @@ vec_restore.glyrepr_structure <- function(x, to, ...) {
 #'
 #' Convert an object to a glycan structure vector.
 #'
+#' Character input assumes the natural absolute configuration for unprefixed
+#' monosaccharides. Less common configurations use a leading `D-` or `L-`, such
+#' as `D-Fuc`, `L-Gul`, and `D-Fucf`.
+#' Alditols use `-ol` on the main reducing-end residue, for example
+#' `Gal(b1-4)GlcNAc-ol(a1-`. The reducing-end anomer annotation remains part of
+#' the canonical representation.
+#'
+#' Character input supports floating-part blocks before the main
+#' IUPAC-condensed structure. `{Neu5Ac(a2-3)}<main>` allows every feasible
+#' node outside its own component as a candidate parent, while an explicit
+#' `|<parents>` suffix restricts that domain. Parent indices follow residue
+#' order in the complete supplied sequence: residues in floating blocks are
+#' counted left to right before the main glycan, and substituent blocks add no
+#' indices. A floating part may target another floating component or the main
+#' tree, but cannot target itself. Indices are remapped to canonical complete
+#' sequence order in the result. The suffix is a `glyrepr` extension to
+#' curly-brace IUPAC notation. A singleton candidate set is accepted as input
+#' but fully localizes the attachment, so
+#' `{Neu5Ac(a2-3)|2}Gal(b1-4)GlcNAc(b1-` canonicalizes to the ordinary structure
+#' `Neu5Ac(a2-3)Gal(b1-4)GlcNAc(b1-`.
+#'
+#' Floating substituents use the same leading-brace and candidate-parent syntax.
+#' For example, `{6S}<main>` leaves the sulfated residue unrestricted across all
+#' residue nodes, `{6S|1,2}<main>` restricts it to complete-sequence nodes 1 and
+#' 2, and `{?S}<main>` also leaves the carbon position unknown. A singleton
+#' candidate is normalized into the selected residue's ordinary `sub` attribute.
+#'
 #' @param x An object to convert to a glycan structure vector.
 #'   Can be an igraph object, a list of igraph objects,
 #'   a character vector of IUPAC-condensed strings,
@@ -688,6 +763,17 @@ vec_restore.glyrepr_structure <- function(x, to, ...) {
 #'
 #' # Convert a character vector of IUPAC-condensed strings
 #' as_glycan_structure(c("GlcNAc(b1-4)GlcNAc(b1-", "Man(a1-2)GlcNAc(b1-"))
+#' as_glycan_structure(c("D-Fuc(a1-", "L-Gul(b1-", "D-Fucf(a1-"))
+#' as_glycan_structure("Gal(b1-4)GlcNAc-ol(a1-")
+#'
+#' # Parse a floating residue with two candidate parents
+#' floating_iupac <- paste0(
+#'   "{Neu5Ac(a2-3)|2,5}",
+#'   "Gal(b1-4)GlcNAc(b1-2)Man(a1-3)",
+#'   "[Gal(b1-4)GlcNAc(b1-2)Man(a1-6)]",
+#'   "Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-"
+#' )
+#' as_glycan_structure(floating_iupac)
 #'
 #' # Preserve valid elements while replacing an invalid element with NA
 #' as_glycan_structure(
@@ -921,11 +1007,19 @@ warn_structure_failures <- function(positions, reasons, input_names = NULL) {
 #' Access Individual Glycan Structures
 #'
 #' Extract individual glycan structure graphs from a glycan structure vector.
+#' A structure with floating parts is returned as one annotated, weakly
+#' disconnected `igraph`: its main tree and floating components share the graph,
+#' and the `floating_parts` graph attribute records each component's node
+#' indices, virtual attachment, and candidate parents. See [glycan_structure()]
+#' for the metadata schema.
+#' A structure with floating substituents carries a `floating_substituents`
+#' graph attribute containing their tokens and candidate parent indices.
 #'
 #' @param x A glycan structure vector.
 #' @param return_list If `TRUE`, always returns a list.
 #'   If `FALSE` and `x` has a length of 1, return the igraph object directly.
-#'   If not provided (default), `FALSE` when `x` has a length of 1 and `TRUE` otherwise.
+#'   If not provided (default), `FALSE` when `x` has a length of 1 and `TRUE`
+#'   otherwise, including for an empty vector.
 #'
 #' @returns A list of igraph objects or an igraph object directly (see `return_list` parameter).
 #'
@@ -940,11 +1034,11 @@ get_structure_graphs <- function(x, return_list = NULL) {
   checkmate::assert_flag(return_list, null.ok = TRUE)
 
   if (is.null(return_list)) {
-    return_list <- length(x) > 1
+    return_list <- length(x) != 1
   } else {
-    if (!return_list && length(x) > 1) {
+    if (!return_list && length(x) != 1) {
       cli::cli_abort(c(
-        "{.arg return_list} must be `TRUE` or `NULL` if {.arg x} has a length greater than 1.",
+        "{.arg return_list} must be `TRUE` or `NULL` unless {.arg x} has length 1.",
         "i" = "Length of {.arg x}: {.val {length(x)}}"
       ))
     }

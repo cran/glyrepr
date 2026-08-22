@@ -37,6 +37,39 @@ test_that("has_linkages() considers anomers", {
   expect_true(has_linkages(glycan))
 })
 
+test_that("has_linkages() considers floating attachment linkages", {
+  known <- as_glycan_structure(
+    "{Neu5Ac(a2-6)}Gal(b1-3)GalNAc(a1-"
+  )
+  unknown <- as_glycan_structure(
+    "{Neu5Ac(??-?)}Gal(??-?)GalNAc(??-"
+  )
+  partial <- as_glycan_structure(
+    "{Neu5Ac(a2-?)}Gal(a1-?)GalNAc(a1-"
+  )
+
+  expect_true(has_linkages(known))
+  expect_true(has_linkages(known, strict = TRUE))
+  expect_false(has_linkages(unknown))
+  expect_false(has_linkages(unknown, strict = TRUE))
+  expect_true(has_linkages(partial))
+  expect_false(has_linkages(partial, strict = TRUE))
+})
+
+test_that("has_linkages() works with glycan graphs", {
+  intact <- get_structure_graphs(
+    as_glycan_structure("Gal(b1-3)GalNAc(a1-")
+  )
+  partial <- get_structure_graphs(
+    as_glycan_structure("Gal(b1-?)GalNAc(a1-")
+  )
+
+  expect_identical(has_linkages(intact), TRUE)
+  expect_identical(has_linkages(intact, strict = TRUE), TRUE)
+  expect_identical(has_linkages(partial), TRUE)
+  expect_identical(has_linkages(partial, strict = TRUE), FALSE)
+})
+
 # ========= possible_linkages() =========
 # Tests for possible_linkages() function
 test_that("possible_linkages() works for a?-2", {
@@ -123,4 +156,72 @@ test_that("remove_linkages() works", {
   graph <- get_structure_graphs(glycan, return_list = FALSE)
   expect_equal(igraph::E(graph)$linkage, c("??-?", "??-?"))
   expect_equal(igraph::graph_attr(graph, "anomer"), "??")
+})
+
+test_that("remove_linkages skips floating normalization for ordinary trees", {
+  glycan <- o_glycan_core_2(linkage = TRUE)
+  testthat::local_mocked_bindings(
+    normalize_floating_parts = function(...) {
+      stop("floating normalization should not run")
+    }
+  )
+
+  result <- remove_linkages(glycan)
+
+  expect_identical(
+    unname(as.character(result)),
+    "GlcNAc(??-?)[Gal(??-?)]GalNAc(??-"
+  )
+})
+
+test_that("remove_linkages keeps ordinary branch order canonical", {
+  glycan <- as_glycan_structure(
+    "Fuc(b1-2)[Gal(a1-3)]Gal(b1-3)GlcNAc(b1-"
+  )
+
+  result <- remove_linkages(glycan)
+  graph <- get_structure_graphs(result, return_list = FALSE)
+
+  expect_identical(
+    unname(as.character(result)),
+    "Gal(??-?)[Fuc(??-?)]Gal(??-?)GlcNAc(??-"
+  )
+  expect_identical(
+    igraph::V(graph)$mono,
+    c("Gal", "Fuc", "Gal", "GlcNAc")
+  )
+})
+
+test_that("remove_linkages() removes floating attachment linkages", {
+  glycan <- as_glycan_structure(
+    "{Neu5Ac(a2-6)|2,3}Gal(b1-3)GalNAc(a1-"
+  )
+
+  result <- remove_linkages(glycan)
+
+  expect_identical(
+    as.character(result),
+    "{Neu5Ac(??-?)|2,3}Gal(??-?)GalNAc(??-"
+  )
+  parts <- structure_floating_parts(result)
+  expect_identical(parts$linkage, "??-?")
+  expect_identical(parts$parents[[1]], c(2L, 3L))
+})
+
+test_that("remove_linkages works with glycan graphs without reordering", {
+  structure <- as_glycan_structure(
+    "{Neu5Ac(a2-6)|2,3}Gal(b1-3)GalNAc(a1-"
+  )
+  graph <- get_structure_graphs(structure)
+  names_before <- igraph::V(graph)$name
+  edges_before <- igraph::as_edgelist(graph, names = FALSE)
+
+  result <- remove_linkages(graph)
+
+  expect_s3_class(result, "igraph")
+  expect_identical(igraph::V(result)$name, names_before)
+  expect_identical(igraph::as_edgelist(result, names = FALSE), edges_before)
+  expect_identical(igraph::E(result)$linkage, "??-?")
+  expect_identical(result$anomer, "??")
+  expect_identical(result$floating_parts[[1]]$linkage, "??-?")
 })

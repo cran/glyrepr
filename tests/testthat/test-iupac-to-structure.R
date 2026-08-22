@@ -17,6 +17,32 @@ test_that("as_glycan_structure.character parses simple IUPAC-condensed strings",
   expect_equal(structure_to_iupac(glycan3), "Gal(b1-3)GalNAc(a1-")
 })
 
+test_that("as_glycan_structure.character infers reducing-end anomer positions", {
+  iupacs <- c("Man", "Neu5Ac", "Gal(b1-3)GalNAc")
+
+  glycans <- as_glycan_structure(iupacs)
+
+  expect_equal(
+    structure_to_iupac(glycans),
+    c("Man(?1-", "Neu5Ac(?2-", "Gal(b1-3)GalNAc(?1-")
+  )
+})
+
+test_that("ordinary IUPAC parsing bypasses floating-part splitting", {
+  testthat::local_mocked_bindings(
+    split_floating_iupac = function(...) {
+      stop("floating parser should not run")
+    }
+  )
+
+  glycan <- as_glycan_structure("Gal(b1-3)GalNAc(a1-")
+
+  expect_identical(
+    unname(structure_to_iupac(glycan)),
+    "Gal(b1-3)GalNAc(a1-"
+  )
+})
+
 test_that("as_glycan_structure.character parses branched structures", {
   # Simple branched structure
   iupac <- "Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(?1-"
@@ -25,6 +51,53 @@ test_that("as_glycan_structure.character parses branched structures", {
   expect_equal(
     structure_to_iupac(glycan),
     "Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(?1-"
+  )
+})
+
+test_that("as_glycan_structure.character parses floating parts", {
+  iupacs <- c(
+    "{Neu5Ac(a2-3)}Gal(b1-3)GalNAc(a1-",
+    "{Neu5Ac(a2-6)|2,3}Gal(b1-3)GalNAc(a1-",
+    "{Neu5Ac(a2-3)|2,5}Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-",
+    "{Neu5Ac(a2-3)Gal(b1-4)|3,4}Glc(b1-3)GalNAc(a1-"
+  )
+
+  glycans <- as_glycan_structure(iupacs)
+  graphs <- as.list(glycans)
+
+  expect_identical(unname(structure_to_iupac(glycans)), iupacs)
+  expect_equal(
+    purrr::map(graphs, ~ .x$floating_parts[[1]]$parents),
+    list(integer(), c(2L, 3L), c(2L, 5L), c(3L, 4L))
+  )
+  expect_equal(
+    purrr::map_int(graphs, ~ .x$floating_parts[[1]]$root),
+    c(1L, 1L, 1L, 2L)
+  )
+  expect_equal(
+    purrr::map(graphs, ~ .x$floating_parts[[1]]$nodes),
+    list(1L, 1L, 1L, c(1L, 2L))
+  )
+  expect_equal(
+    igraph::V(graphs[[4]])$mono,
+    c("Neu5Ac", "Gal", "Glc", "GalNAc")
+  )
+})
+
+test_that("floating parent indices follow canonicalized main-tree order", {
+  glycan <- as_glycan_structure(
+    paste0(
+      "{Neu5Ac(a2-4)|2,4}",
+      "Man(a1-6)[Man(a1-3)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-"
+    )
+  )
+
+  expect_identical(
+    unname(structure_to_iupac(glycan)),
+    paste0(
+      "{Neu5Ac(a2-4)|3,4}",
+      "Man(a1-3)[Man(a1-6)]Man(b1-4)GlcNAc(b1-4)GlcNAc(b1-"
+    )
   )
 })
 
@@ -76,12 +149,128 @@ test_that("as_glycan_structure.character parses digit-leading monosaccharides", 
 })
 
 
+test_that("as_glycan_structure.character parses every furanose form", {
+  monos <- unname(furanose_monosaccharides)
+  iupacs <- paste0(monos, "(?", infer_anomer_pos(monos), "-")
+
+  glycans <- as_glycan_structure(iupacs)
+  graphs <- get_structure_graphs(glycans)
+
+  expect_identical(
+    purrr::map_chr(graphs, ~ igraph::V(.x)$mono),
+    monos
+  )
+  expect_identical(unname(structure_to_iupac(glycans)), iupacs)
+})
+
+
+test_that("as_glycan_structure.character parses every unusual configuration", {
+  monos <- unname(unusual_configuration_monosaccharides)
+  iupacs <- paste0(monos, "(?", infer_anomer_pos(monos), "-")
+
+  glycans <- as_glycan_structure(iupacs)
+  graphs <- get_structure_graphs(glycans)
+
+  expect_identical(
+    purrr::map_chr(graphs, ~ igraph::V(.x)$mono),
+    monos
+  )
+  expect_identical(unname(structure_to_iupac(glycans)), iupacs)
+})
+
+
+test_that("unusual configurations support branches and omitted anomers", {
+  iupac <- "D-Fuc(a1-2)[L-Gul(b1-3)]Gal(?1-"
+
+  expect_identical(
+    unname(structure_to_iupac(as_glycan_structure(iupac))),
+    iupac
+  )
+  expect_identical(
+    unname(structure_to_iupac(as_glycan_structure("L-6dGul"))),
+    "L-6dGul(?1-"
+  )
+})
+
+
+test_that("unusual configurations retain substituents", {
+  iupacs <- c(
+    "D-Fuc3S(a1-",
+    "L-Neu5Ac9Ac(a2-",
+    "L-Neuf5Gc9Ac(a2-",
+    "L-Neu4Ac5Ac(a2-",
+    "L-Neuf4Ac5Gc(a2-"
+  )
+  expected_iupacs <- c(
+    iupacs[1:3],
+    "L-Neu5Ac4Ac(a2-",
+    "L-Neuf5Gc4Ac(a2-"
+  )
+
+  glycans <- as_glycan_structure(iupacs)
+  graphs <- get_structure_graphs(glycans)
+
+  expect_identical(
+    purrr::map_chr(graphs, ~ igraph::V(.x)$mono),
+    c("D-Fuc", "L-Neu5Ac", "L-Neuf5Gc", "L-Neu5Ac", "L-Neuf5Gc")
+  )
+  expect_identical(
+    purrr::map_chr(graphs, ~ igraph::V(.x)$sub),
+    c("3S", "9Ac", "9Ac", "4Ac", "4Ac")
+  )
+  expect_identical(unname(structure_to_iupac(glycans)), expected_iupacs)
+})
+
+
+test_that("redundant natural configuration prefixes are rejected", {
+  errors <- purrr::map(
+    c("L-Fuc(a1-", "D-Gul(b1-", "D-Neu5Ac(a2-"),
+    ~ tryCatch(as_glycan_structure(.x), error = identity)
+  )
+
+  expect_identical(purrr::map_lgl(errors, inherits, "error"), rep(TRUE, 3))
+  expect_match(
+    purrr::map_chr(errors, conditionMessage),
+    "Unknown monosaccharide"
+  )
+})
+
+
+test_that("furanose forms retain additional substituents", {
+  iupacs <- c(
+    "Galf3Me(b1-",
+    "GlcfNAc6Ac(b1-",
+    "Neuf5Ac9Ac(a2-",
+    "Neuf4Ac5Gc(a2-"
+  )
+
+  glycans <- as_glycan_structure(iupacs)
+  graphs <- get_structure_graphs(glycans)
+
+  expect_identical(
+    purrr::map_chr(graphs, ~ igraph::V(.x)$mono),
+    c("Galf", "GlcfNAc", "Neuf5Ac", "Neuf5Gc")
+  )
+  expect_identical(
+    purrr::map_chr(graphs, ~ igraph::V(.x)$sub),
+    c("3Me", "6Ac", "9Ac", "4Ac")
+  )
+  expect_identical(
+    unname(structure_to_iupac(glycans)),
+    c(iupacs[1:3], "Neuf5Gc4Ac(a2-")
+  )
+})
+
+
 test_that("as_glycan_structure.character handles unknown linkages", {
   # Unknown linkages
   iupac <- "Man(a1-?)Man(?1-3)Man(?1-"
   glycan <- as_glycan_structure(iupac)
   expect_s3_class(glycan, "glyrepr_structure")
   expect_equal(structure_to_iupac(glycan), "Man(a1-?)Man(?1-3)Man(?1-")
+
+  shorthand <- as_glycan_structure("Gal(?-?)GalNAc(?1-")
+  expect_equal(structure_to_iupac(shorthand), "Gal(??-?)GalNAc(?1-")
 })
 
 test_that("as_glycan_structure.character handles multiple linkages", {
@@ -90,6 +279,17 @@ test_that("as_glycan_structure.character handles multiple linkages", {
   glycan <- as_glycan_structure(iupac)
   expect_s3_class(glycan, "glyrepr_structure")
   expect_equal(structure_to_iupac(glycan), "Neu5Ac(a2-3/6)Gal(?1-")
+
+  unknown_choices <- c(
+    "Gal(b1-4/?)GlcNAc(?1-",
+    "Gal(b1-?/4)GlcNAc(?1-",
+    "Gal(b1-3/?/6)GlcNAc(?1-"
+  )
+  normalized <- as_glycan_structure(unknown_choices)
+  expect_equal(
+    structure_to_iupac(normalized),
+    rep("Gal(b1-?)GlcNAc(?1-", length(unknown_choices))
+  )
 })
 
 test_that("as_glycan_structure.character works with vectors", {
@@ -126,17 +326,6 @@ test_that("as_glycan_structure.character error handling", {
 
   # Invalid format - unknown monosaccharide
   expect_error(as_glycan_structure("invalid_format"), "Could not parse")
-
-  # Missing anomer information
-  expect_error(as_glycan_structure("Man"), "Can't extract anomer information")
-  expect_error(
-    as_glycan_structure("Neu5Ac"),
-    "Can't extract anomer information"
-  )
-  expect_error(
-    as_glycan_structure("Gal(b1-3)GalNAc"),
-    "Can't extract anomer information"
-  )
 })
 
 test_that("as_glycan_structure.character round-trip consistency", {
@@ -258,12 +447,13 @@ test_that("as_glycan_structure.character handles mixed valid/invalid in vectors"
   expect_error(as_glycan_structure(all_invalid), "Could not parse")
 })
 
-test_that("as_glycan_structure.character rejects mixed mono types with NA", {
+test_that("as_glycan_structure.character accepts mixed mono types with NA", {
   mixed_vector <- c("Glc(a1-", NA, "Hex(a1-")
 
-  expect_error(
-    as_glycan_structure(mixed_vector),
-    "All structures must have the same monosaccharide type"
+  result <- as_glycan_structure(mixed_vector)
+  expect_identical(
+    get_mono_type(result),
+    c("concrete", NA_character_, "generic")
   )
 })
 
@@ -331,6 +521,56 @@ test_that("as_glycan_structure.character handles multiple unknown substituents",
     c("?Me,?S", "?S,?S")
   )
   expect_equal(structure_to_iupac(glycans), iupacs)
+})
+
+test_that("as_glycan_structure.character handles ambiguous substituent positions", {
+  iupacs <- c(
+    "Gal4/6S(a1-",
+    "Gal3/4/6S(a1-",
+    "Gal4/6Ac(a1-",
+    "Neu4/5Ac(a2-"
+  )
+
+  glycans <- as_glycan_structure(iupacs)
+  graphs <- get_structure_graphs(glycans)
+
+  expect_identical(
+    purrr::map_chr(graphs, \(graph) igraph::V(graph)$mono),
+    c("Gal", "Gal", "Gal", "Neu")
+  )
+  expect_identical(
+    purrr::map_chr(graphs, \(graph) igraph::V(graph)$sub),
+    c("4/6S", "3/4/6S", "4/6Ac", "4/5Ac")
+  )
+  expect_identical(unname(structure_to_iupac(glycans)), iupacs)
+  expect_identical(unname(count_mono(glycans, "S")), c(1L, 1L, 0L, 0L))
+})
+
+test_that("ambiguous substituent alternatives are canonicalized", {
+  iupacs <- c("Gal6/4S(a1-", "Gal4/6S(a1-", "Gal4/4S(a1-")
+
+  glycans <- as_glycan_structure(iupacs)
+
+  expect_identical(
+    unname(structure_to_iupac(glycans)),
+    c("Gal4/6S(a1-", "Gal4/6S(a1-", "Gal4S(a1-")
+  )
+  expect_identical(glycans[[1]], glycans[[2]])
+})
+
+test_that("as_glycan_structure.character rejects malformed ambiguous positions", {
+  iupacs <- c("Gal/6S(a1-", "Gal4/S(a1-", "Gal4//6S(a1-")
+  parsed <- purrr::map_lgl(iupacs, function(iupac) {
+    tryCatch(
+      {
+        as_glycan_structure(iupac)
+        TRUE
+      },
+      error = \(error) FALSE
+    )
+  })
+
+  expect_identical(parsed, rep(FALSE, length(iupacs)))
 })
 
 test_that("as_glycan_structure.character prefers longer substituent tokens", {

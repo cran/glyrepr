@@ -6,7 +6,7 @@
 <!-- badges: start -->
 
 [![Lifecycle:
-experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html#stable)
 [![CRAN
 status](https://www.r-pkg.org/badges/version/glyrepr)](https://CRAN.R-project.org/package=glyrepr)
 [![R-universe
@@ -33,25 +33,27 @@ You can install the latest release of glyrepr from
 [CRAN](https://CRAN.R-project.org/package=glyrepr):
 
 ``` r
-install.packages("glyrepr")
+pak::pkg_install("glyrepr")
 ```
 
 Or from [r-universe](https://glycoverse.r-universe.dev/glyrepr):
 
 ``` r
-install.packages('glyrepr', repos = c('https://glycoverse.r-universe.dev', 'https://cloud.r-project.org'))
+pak::repo_add(glycoverse = "https://glycoverse.r-universe.dev")
+pak::pkg_install("glyrepr")
 ```
 
-Or from [GitHub](https://github.com/glycoverse/glyrepr):
+Or install the latest GitHub release:
 
 ``` r
-remotes::install_github("glycoverse/glyrepr@*release")
+pak::pkg_install("glycoverse/glyrepr@*release")
 ```
 
-Or install the development version:
+Or install the development version from
+[GitHub](https://github.com/glycoverse/glyrepr):
 
 ``` r
-remotes::install_github("glycoverse/glyrepr")
+pak::pkg_install("glycoverse/glyrepr")
 ```
 
 ## Documentation

@@ -7,12 +7,13 @@
 fill_anomer_pos(strucs)
 }
 \arguments{
-\item{strucs}{A \code{\link[=glycan_structure]{glycan_structure()}} vector with concrete or generic
-monosaccharides.}
+\item{strucs}{A \code{\link[=glycan_structure]{glycan_structure()}} vector or glycan \code{igraph} with concrete
+or generic monosaccharides.}
 }
 \value{
-A \code{\link[=glycan_structure]{glycan_structure()}} vector with anomer positions added where
-missing.
+An object of the same representation as \code{strucs} with anomer
+positions added where missing. Graph input retains its vertex IDs and
+order.
 }
 \description{
 Add anomer positions to glycan structures with missing anomer position
@@ -22,6 +23,10 @@ information. For example, \code{"Gal(??-?)GalNAc(??-"} is converted to
 \details{
 For anomer positions that are already specified in the input structures,
 this function does not modify them.
+
+For a structure with floating parts, the reducing-end position is inferred
+from the root of the main tree. Positions in virtual floating-part
+attachment linkages are inferred from each floating part's root residue.
 }
 \examples{
 glycans <- as_glycan_structure(c(

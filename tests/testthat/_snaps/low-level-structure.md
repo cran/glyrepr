@@ -1,3 +1,11 @@
+# empty floating metadata preserves the validation contract
+
+    Code
+      validate_glycan_graph(graph)
+    Condition
+      Error in `normalize_floating_parts()`:
+      ! Graph attribute floating_parts must be a list.
+
 # validate_glycan_graph reports invalid input
 
     Code
@@ -6,16 +14,6 @@
       Error in `validate_glycan_graph()`:
       ! Glycan structure must be directed.
 
-# validate_glycan_graph_vector rejects mixed monosaccharide types
-
-    Code
-      validate_glycan_graph_vector(list(concrete, generic))
-    Condition
-      Error in `validate_glycan_graph_vector()`:
-      ! All structures must have the same monosaccharide type.
-      x Found 1 concrete and 1 generic structure(s) in the same vector.
-      i Use `convert_to_generic()` to convert concrete structures to generic type.
-
 # graph_to_iupac generates one string from one graph
 
     Code
@@ -23,6 +21,14 @@
     Condition
       Error in `graph_to_iupac()`:
       ! Assertion on 'graph' failed: Must inherit from class 'igraph', but has class 'list'.
+
+# unannotated forests remain invalid
+
+    Code
+      validate_glycan_graph(graph)
+    Condition
+      Error in `validate_floating_graph_shape()`:
+      ! Glycan structure must be an out tree.
 
 # new_glycan_structure checks graph lookup integrity
 

@@ -22,8 +22,10 @@ the [igraph documentation](https://r.igraph.org) is a useful companion reference
 ## Glycans as Graphs
 
 Glycans are naturally represented as directed graphs.
-In `glyrepr`, a glycan structure is stored as an outward-directed tree,
-where each vertex represents a monosaccharide and each edge represents a glycosidic linkage.
+In `glyrepr`, an ordinary glycan structure is stored as an outward-directed
+tree, where each vertex represents a monosaccharide and each edge represents a
+glycosidic linkage. A structure with floating parts is stored as an annotated
+forest: one main tree plus one disconnected tree for each floating part.
 
 Behind the scenes,
 each `glycan_structure()` object is backed by an `igraph` object.
@@ -77,6 +79,11 @@ The printed graph contains several pieces of information.
 **Graph-level attributes:**
 
 - `anomer`: the anomeric configuration of the reducing end.
+- `alditol`: whether the reducing-end residue is an alditol.
+- `floating_parts`, when present: virtual attachment metadata for disconnected
+  floating components.
+- `floating_substituents`, when present: unresolved substituent tokens and
+  their candidate parent residues.
 
 **Vertex attributes:**
 
@@ -175,12 +182,79 @@ for example "Neu5Ac with an a2-3 linkage".
 graph$anomer
 ```
 
+**Alditol:** Whether the reducing-end residue has been reduced. The attribute
+is always explicit on canonical graphs; legacy inputs without it are treated as
+`FALSE`. In IUPAC-condensed strings, `-ol` follows the reducing-end residue.
+
+```{r}
+alditol <- as_glycan_structure("Gal(b1-4)GlcNAc-ol(a1-")
+alditol_graph <- get_structure_graphs(alditol)
+alditol_graph$alditol
+get_alditol(alditol)
+```
+
+### Floating Parts
+
+A floating structure remains one `igraph`, but it is weakly disconnected.
+The floating-component vertices come first in complete IUPAC-condensed order,
+followed by the main-tree vertices in their canonical order.
+
+```{r}
+floating <- as_glycan_structure(
+  "{Neu5Ac(a2-3)|2,3}Gal(b1-3)[Gal(b1-4)]GlcNAc(a1-"
+)
+floating_graph <- get_structure_graphs(floating)
+
+igraph::components(floating_graph, mode = "weak")$no
+igraph::graph_attr(floating_graph, "floating_parts")
+structure_floating_parts(floating)
+```
+
+Each `floating_parts` entry has four fields:
+
+- `root`: the vertex index at the root of the floating component.
+- `nodes`: every vertex index in the floating component.
+- `linkage`: the virtual linkage from that root to its unresolved parent.
+- `parents`: candidate vertex indices outside the component. `integer()` means
+  all feasible nodes outside that component, including nodes in other floating
+  parts. In a canonical structure, an explicit vector has at least two entries;
+  a singleton is normalized to an ordinary edge.
+
+These IDs follow complete IUPAC-condensed residue order: floating blocks are
+counted from left to right before the main glycan, and substituent blocks add no
+vertices. Component assignments must be acyclic and ultimately connect to the
+main tree.
+
+The virtual attachment is not stored in `igraph::E(floating_graph)`, because
+its endpoint is unresolved. Use `structure_floating_parts()` when a tabular
+representation must round-trip this metadata.
+
+### Floating Substituents
+
+Floating substituents use the same candidate-parent convention without adding
+dummy vertices. Each `floating_substituents` entry contains `substituent`, such
+as `"6S"` or `"?S"`, and `parents`. Empty `parents` means every feasible
+residue node in the complete structure, including floating-part nodes;
+otherwise the values are global graph vertex indices.
+
+```{r}
+floating_sub <- as_glycan_structure(
+  "{6S|1,2}Gal(a1-3)Glc(a1-3)Man(a1-"
+)
+floating_sub_graph <- get_structure_graphs(floating_sub)
+igraph::graph_attr(floating_sub_graph, "floating_substituents")
+structure_floating_substituents(floating_sub)
+```
+
 ## Working with the Graph
 
 ### Using `igraph`
 
 Once you understand the graph structure, 
 you can use `igraph` functions for custom structure analysis.
+Remember that tree-specific functions need special handling for a structure
+with floating parts: `get_structure_graphs()` and `smap()` pass the complete
+annotated forest, not only the main tree.
 
 **Example 1:** Count branched structures (sugars with multiple children):
 

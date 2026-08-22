@@ -10,8 +10,8 @@ new_glycan_structure(iupac = character(), graphs = list())
 \item{iupac}{A character vector of canonical IUPAC-condensed strings. Missing
 values are allowed, and names are preserved exactly.}
 
-\item{graphs}{A named list of valid, canonical, mutually compatible \code{igraph}
-glycan graphs keyed by IUPAC-condensed strings.}
+\item{graphs}{A named list of valid, canonical \code{igraph} glycan graphs keyed
+by IUPAC-condensed strings.}
 }
 \value{
 A \code{glyrepr_structure} vector.
@@ -35,6 +35,25 @@ is usually not a good idea unless you understand and can guarantee all glycan
 graph and \code{glyrepr_structure} invariants. Prefer \code{\link[=as_glycan_structure]{as_glycan_structure()}} for
 ordinary construction. Incorrect use of these functions can create invalid
 structure vectors that fail in later operations.
+}
+
+\section{Floating graph schemas}{
+
+A floating structure is one weakly disconnected graph with exactly one main
+outward tree and one outward tree per floating part. Its \code{floating_parts}
+graph attribute is a list of entries with integer \code{root}, integer \code{nodes},
+character \code{linkage}, and integer \code{parents} fields. \code{nodes} contains every
+vertex in that floating component. \code{parents = integer()} means all feasible
+main-tree nodes. Legacy input graphs may omit \code{nodes}; canonical output
+graphs always contain it. During canonicalization, a part with exactly one
+effective candidate parent is converted to an ordinary graph edge and its
+floating metadata is removed. Otherwise, the virtual attachment linkage is
+not a graph edge. See \code{\link[=glycan_structure]{glycan_structure()}} for the complete contract.
+
+A graph may also have a \code{floating_substituents} attribute. It is a list of
+entries with character \code{substituent} and integer \code{parents} fields. An empty
+parent vector means all feasible main-tree nodes. A singleton candidate is
+moved into the selected vertex's \code{sub} attribute during canonicalization.
 }
 
 \section{Name-preserving manual construction}{

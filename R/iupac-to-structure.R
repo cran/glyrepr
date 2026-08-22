@@ -7,6 +7,322 @@
 #' @return An igraph object representing the glycan structure
 #' @keywords internal
 .parse_iupac_condensed_single <- function(x) {
+  x <- stringr::str_replace_all(
+    x,
+    stringr::fixed("(?-?)"),
+    "(??-?)"
+  )
+  x <- stringr::str_replace_all(
+    x,
+    "\\(([ab\\?][12\\?])-(?:[1-9]/)*\\?(?:/[1-9])*\\)",
+    "(\\1-?)"
+  )
+
+  if (!isTRUE(startsWith(x, "{"))) {
+    return(.parse_iupac_tree_single(x))
+  }
+
+  floating <- split_floating_iupac(x)
+
+  is_substituent <- purrr::map_lgl(
+    floating$parts,
+    ~ stringr::str_detect(
+      .x$sequence,
+      substituent_token_pattern(anchored = TRUE)
+    )
+  )
+
+  parsed_parts <- purrr::map(
+    floating$parts[!is_substituent],
+    parse_floating_iupac_part
+  )
+  parsed_parts <- purrr::map(
+    parsed_parts,
+    function(part) {
+      parsed <- canonicalize_parsed_iupac_component(part$graph)
+      part$graph <- parsed$graph
+      part$source_to_canonical <- parsed$source_to_canonical
+      part
+    }
+  )
+  main <- canonicalize_parsed_iupac_component(
+    .parse_iupac_tree_single(floating$main)
+  )
+
+  part_sizes <- purrr::map_int(parsed_parts, ~ igraph::vcount(.x$graph))
+  part_offsets <- cumsum(c(0L, part_sizes))
+  main_offset <- sum(part_sizes)
+  source_to_graph <- c(
+    unlist(
+      purrr::map2(
+        parsed_parts,
+        part_offsets[-length(part_offsets)],
+        ~ as.integer(.y + .x$source_to_canonical)
+      ),
+      use.names = FALSE
+    ),
+    as.integer(main_offset + main$source_to_canonical)
+  )
+  structure_size <- length(source_to_graph)
+
+  parsed_parts <- purrr::map2(
+    parsed_parts,
+    seq_along(parsed_parts),
+    function(part, part_id) {
+      source_nodes <- part_offsets[[part_id]] + seq_len(part_sizes[[part_id]])
+      validate_floating_source_parents(
+        part$parents,
+        structure_size,
+        own_nodes = source_nodes
+      )
+      part$parents <- sort(source_to_graph[part$parents])
+      part$source_to_canonical <- NULL
+      part
+    }
+  )
+
+  parsed_substituents <- purrr::map(
+    floating$parts[is_substituent],
+    function(substituent) {
+      validate_floating_source_parents(
+        substituent$parents,
+        structure_size
+      )
+      list(
+        substituent = normalize_substituent_token(substituent$sequence),
+        parents = sort(source_to_graph[substituent$parents])
+      )
+    }
+  )
+
+  combine_floating_iupac_graphs(
+    main$graph,
+    parsed_parts,
+    parsed_substituents
+  )
+}
+
+canonicalize_parsed_iupac_component <- function(graph) {
+  igraph::V(graph)$source_index <- rev(seq_len(igraph::vcount(graph)))
+  graph <- validate_glycan_graph(graph)
+  graph <- canonicalize_glycan_graph(graph)
+  source_to_canonical <- match(
+    seq_len(igraph::vcount(graph)),
+    igraph::V(graph)$source_index
+  )
+  graph <- igraph::delete_vertex_attr(graph, "source_index")
+
+  list(
+    graph = graph,
+    source_to_canonical = as.integer(source_to_canonical)
+  )
+}
+
+validate_floating_source_parents <- function(
+  parents,
+  structure_size,
+  own_nodes = integer()
+) {
+  if (length(parents) == 0) {
+    return(invisible(NULL))
+  }
+  if (any(parents > structure_size)) {
+    cli::cli_abort(c(
+      "Floating parent index is outside the complete glycan structure.",
+      "i" = "The complete structure has {structure_size} node{?s}."
+    ))
+  }
+  self_parents <- intersect(parents, own_nodes)
+  if (length(self_parents) > 0) {
+    cli::cli_abort(c(
+      "Floating part parent indices cannot refer to its own component.",
+      "x" = "Self-parent node index{?es}: {.val {self_parents}}."
+    ))
+  }
+
+  invisible(NULL)
+}
+
+split_floating_iupac <- function(x) {
+  if (is.na(x) || nchar(x) == 0 || stringr::str_detect(x, "^\\s*$")) {
+    cli::cli_abort("Cannot parse empty or NA IUPAC-condensed string.")
+  }
+  if (!stringr::str_starts(x, stringr::fixed("{"))) {
+    return(list(parts = list(), main = x))
+  }
+  if (stringr::str_detect(x, "^\\s+|\\s+$")) {
+    cli::cli_abort(
+      "IUPAC-condensed string cannot have leading or trailing whitespace"
+    )
+  }
+  if (stringr::str_detect(x, "\\s")) {
+    cli::cli_abort("IUPAC-condensed string cannot contain whitespace")
+  }
+
+  parts <- list()
+  remainder <- x
+  while (stringr::str_starts(remainder, stringr::fixed("{"))) {
+    chars <- stringr::str_split(remainder, "")[[1]]
+    closing_positions <- which(chars == "}")
+    if (length(closing_positions) == 0) {
+      cli::cli_abort("Malformed floating part in IUPAC-condensed string.")
+    }
+    closing <- closing_positions[[1]]
+    if (closing == 1) {
+      cli::cli_abort("Malformed floating part in IUPAC-condensed string.")
+    }
+    if (any(chars[seq_len(closing)] == "{" & seq_len(closing) != 1)) {
+      cli::cli_abort("Floating parts cannot be nested.")
+    }
+
+    content <- stringr::str_sub(remainder, 2, closing - 1)
+    parts[[length(parts) + 1]] <- split_floating_iupac_part(content)
+    remainder <- stringr::str_sub(remainder, closing + 1)
+  }
+
+  if (!nzchar(remainder)) {
+    cli::cli_abort("A floating glycan structure must have a main glycan.")
+  }
+  if (stringr::str_detect(remainder, "[{}]")) {
+    cli::cli_abort(
+      "Floating parts must precede the main IUPAC-condensed structure."
+    )
+  }
+
+  list(parts = parts, main = remainder)
+}
+
+split_floating_iupac_part <- function(content) {
+  pipe_count <- stringr::str_count(content, stringr::fixed("|"))
+  if (pipe_count > 1) {
+    cli::cli_abort(
+      "A floating part can contain at most one parent-index separator."
+    )
+  }
+
+  fields <- stringr::str_split(content, stringr::fixed("|"))[[1]]
+  sequence <- fields[[1]]
+  if (!nzchar(sequence)) {
+    cli::cli_abort("A floating part cannot be empty.")
+  }
+
+  parents <- integer()
+  if (length(fields) == 2) {
+    parent_text <- fields[[2]]
+    if (!stringr::str_detect(parent_text, "^[1-9][0-9]*(,[1-9][0-9]*)*$")) {
+      cli::cli_abort(
+        "Floating part parents must be comma-separated positive node indices."
+      )
+    }
+    parent_tokens <- stringr::str_split(parent_text, ",")[[1]]
+    parent_values <- suppressWarnings(as.double(parent_tokens))
+    if (
+      any(!is.finite(parent_values)) ||
+        any(parent_values > .Machine$integer.max)
+    ) {
+      cli::cli_abort(
+        "Floating part parent indices exceed the supported integer range."
+      )
+    }
+    parents <- as.integer(parent_values)
+    if (anyDuplicated(parents) > 0) {
+      cli::cli_abort("Floating part parent indices must be unique.")
+    }
+  }
+
+  list(sequence = sequence, parents = parents)
+}
+
+parse_floating_iupac_part <- function(part) {
+  linkage_match <- stringr::str_match(
+    part$sequence,
+    paste0("\\((", linkage_pattern(anchored = FALSE), ")\\)$")
+  )
+  linkage <- linkage_match[[1, 2]]
+  if (is.na(linkage)) {
+    cli::cli_abort(
+      "A floating part must end with its linkage to its unresolved parent."
+    )
+  }
+  sequence <- stringr::str_remove(
+    part$sequence,
+    paste0("\\(", linkage_pattern(anchored = FALSE), "\\)$")
+  )
+  donor <- stringr::str_sub(linkage, 1, 2)
+  graph <- .parse_iupac_tree_single(paste0(sequence, "(", donor, "-"))
+  if (isTRUE(graph$alditol)) {
+    cli::cli_abort(
+      "A floating glycan part cannot contain an alditol reducing end."
+    )
+  }
+
+  list(
+    graph = graph,
+    linkage = linkage,
+    parents = sort(part$parents)
+  )
+}
+
+combine_floating_iupac_graphs <- function(
+  main,
+  parts,
+  substituents = list()
+) {
+  graphs <- c(purrr::map(parts, "graph"), list(main))
+  sizes <- purrr::map_int(graphs, igraph::vcount)
+  offsets <- cumsum(c(0L, sizes[-length(sizes)]))
+
+  graph <- igraph::make_empty_graph(sum(sizes), directed = TRUE)
+  igraph::V(graph)$name <- as.character(seq_len(igraph::vcount(graph)))
+  igraph::V(graph)$mono <- unlist(
+    purrr::map(graphs, ~ igraph::V(.x)$mono),
+    use.names = FALSE
+  )
+  igraph::V(graph)$sub <- unlist(
+    purrr::map(graphs, ~ igraph::V(.x)$sub),
+    use.names = FALSE
+  )
+
+  edge_vectors <- purrr::map2(
+    graphs,
+    offsets,
+    function(component, offset) {
+      edges <- igraph::as_edgelist(component, names = FALSE)
+      if (length(edges) == 0) {
+        return(integer())
+      }
+      as.integer(t(edges + offset))
+    }
+  )
+  edge_vector <- unlist(edge_vectors, use.names = FALSE)
+  if (length(edge_vector) > 0) {
+    graph <- igraph::add_edges(graph, edge_vector)
+  }
+  igraph::E(graph)$linkage <- unlist(
+    purrr::map(graphs, ~ igraph::E(.x)$linkage),
+    use.names = FALSE
+  )
+  graph$anomer <- main$anomer
+  graph$alditol <- main$alditol
+
+  metadata <- purrr::map2(
+    parts,
+    offsets[seq_along(parts)],
+    function(part, offset) {
+      cache <- build_seq_cache(part$graph)
+      list(
+        root = as.integer(offset + cache$root),
+        nodes = as.integer(offset + seq_len(igraph::vcount(part$graph))),
+        linkage = part$linkage,
+        parents = part$parents
+      )
+    }
+  )
+  graph <- set_floating_parts_attr(graph, metadata)
+  set_floating_substituents_attr(graph, substituents)
+}
+
+.parse_iupac_tree_single <- function(x) {
   if (is.na(x) || nchar(x) == 0 || stringr::str_detect(x, "^\\s*$")) {
     cli::cli_abort("Cannot parse empty or NA IUPAC-condensed string.")
   }
@@ -29,6 +345,10 @@
       if (!.validate_brackets(x)) {
         cli::cli_abort("Malformed brackets in IUPAC-condensed string")
       }
+      alditol_result <- parse_alditol_iupac(x)
+      x <- alditol_result$iupac
+      alditol <- alditol_result$alditol
+      x <- .infer_reducing_end_anomer(x)
       anomer <- .extract_anomer(x)
       x <- stringr::str_sub(x, 1, -stringr::str_length(anomer) - 3)
 
@@ -50,6 +370,7 @@
       if (length(tokens) == 1) {
         graph <- igraph::set_edge_attr(graph, "linkage", value = character(0))
         graph$anomer <- anomer
+        graph$alditol <- alditol
         return(graph)
       }
 
@@ -83,6 +404,7 @@
       }
 
       graph$anomer <- anomer
+      graph$alditol <- alditol
       return(graph)
     },
     error = function(e) {
@@ -92,6 +414,28 @@
       ))
     }
   )
+}
+
+
+parse_alditol_iupac <- function(iupac) {
+  annotated_marker <- "-ol(?=\\([ab?][12?]-$)"
+  if (stringr::str_detect(iupac, annotated_marker)) {
+    iupac <- stringr::str_remove(iupac, annotated_marker)
+    alditol <- TRUE
+  } else if (stringr::str_ends(iupac, stringr::fixed("-ol"))) {
+    iupac <- stringr::str_remove(iupac, "-ol$")
+    alditol <- TRUE
+  } else {
+    alditol <- FALSE
+  }
+
+  if (stringr::str_detect(iupac, stringr::fixed("-ol"))) {
+    cli::cli_abort(
+      "The alditol marker {.val -ol} is only allowed on the main reducing-end residue."
+    )
+  }
+
+  list(iupac = iupac, alditol = alditol)
 }
 
 # Validate bracket matching
@@ -121,6 +465,17 @@
   return(depth == 0)
 }
 
+# Infer a missing reducing-end anomer position
+.infer_reducing_end_anomer <- function(iupac) {
+  if (stringr::str_detect(iupac, "\\(([ab\\?][12\\?])-$")) {
+    return(iupac)
+  }
+
+  reducing_end <- .tokenize_iupac(iupac)[[1]]
+  mono <- .extract_substituent(reducing_end)[["mono"]]
+  paste0(iupac, "(?", infer_anomer_pos(mono), "-")
+}
+
 # Extract anomer from IUPAC condensed string
 .extract_anomer <- function(iupac) {
   # e.g. "Neu5Ac(a2-" -> "a2"  (ending anomer specification)
@@ -143,9 +498,10 @@
 .tokenize_iupac <- function(iupac) {
   # Monosaccharide name pattern (including potential substituents)
   # Allow known names that start with digits, e.g. "6dGul" and "4eLeg".
-  # Allow letters, digits, and ? for substituents like "Man?S", "Glc3Me6S", etc.
+  # Allow letters, digits, ?, and / for substituents like "Man?S",
+  # "Glc3Me6S", and "Gal4/6S".
   # Substituents are directly concatenated in IUPAC format, no commas
-  mono_pattern <- "([A-Za-z]|[0-9][A-Za-z])[A-Za-z0-9\\?]*"
+  mono_pattern <- "(?:[DL]-)?(?:[A-Za-z]|[0-9][A-Za-z])[A-Za-z0-9\\?/]*"
   mono_linkage_pattern <- stringr::str_glue(
     "{mono_pattern}(\\({linkage_pattern(anchored = FALSE)}\\))?"
   )
@@ -194,16 +550,34 @@
 
 # Extract substituent from monosaccharide name
 .extract_substituent <- function(mono) {
-  subs_pattern <- substituent_name_pattern(longest_first = TRUE)
-  single_sub_pattern <- stringr::str_glue("[1-9\\?]({subs_pattern})") # Pattern for a single substituent
+  single_sub_pattern <- substituent_token_pattern(longest_first = TRUE)
 
-  # Handle different types of monosaccharides
-  result <- if (stringr::str_starts(mono, "Neu")) {
-    # Handle all Neu-based monosaccharides
-    .handle_neu_monosaccharide(mono, single_sub_pattern)
-  } else {
-    # Handle non-Neu monosaccharides
-    .handle_general_monosaccharide(mono, single_sub_pattern)
+  result <- .extract_substituent_without_configuration(
+    mono,
+    single_sub_pattern
+  )
+
+  if (
+    !is_known_monosaccharide(result[["mono"]]) &&
+      stringr::str_detect(mono, "^[DL]-")
+  ) {
+    configuration <- stringr::str_sub(mono, 1, 1)
+    unconfigured <- stringr::str_sub(mono, 3)
+    configured_result <- .extract_substituent_without_configuration(
+      unconfigured,
+      single_sub_pattern
+    )
+    configured_mono <- unname(
+      unusual_configuration_monosaccharides[configured_result[["mono"]]]
+    )
+
+    if (
+      !is.na(configured_mono) &&
+        stringr::str_starts(configured_mono, paste0(configuration, "-"))
+    ) {
+      result <- configured_result
+      result[["mono"]] <- configured_mono
+    }
   }
 
   # Validate that the monosaccharide is known
@@ -214,29 +588,62 @@
   result
 }
 
+
+.extract_substituent_without_configuration <- function(
+  mono,
+  single_sub_pattern
+) {
+  # Handle different types of monosaccharides
+  if (stringr::str_starts(mono, "Neu")) {
+    # Handle all Neu-based monosaccharides
+    .handle_neu_monosaccharide(mono, single_sub_pattern)
+  } else {
+    # Handle non-Neu monosaccharides
+    .handle_general_monosaccharide(mono, single_sub_pattern)
+  }
+}
+
 # Handle Neu-based monosaccharides with substituents
 # This function determines the correct base monosaccharide (Neu5Ac, Neu5Gc, or Neu)
 # based on the presence of 5Ac or 5Gc substituents
 .handle_neu_monosaccharide <- function(mono, single_sub_pattern) {
   # Check for conflicting 5Ac5Gc pattern
-  if (stringr::str_detect(mono, "5Gc") && stringr::str_detect(mono, "5Ac")) {
+  if (.has_neu_marker(mono, "5Gc") && .has_neu_marker(mono, "5Ac")) {
     cli::cli_abort(
       "Monosaccharide cannot have both 5Ac and 5Gc substituents: {mono}"
     )
   }
 
   # Handle all Neu variants containing 5Ac
-  if (stringr::str_detect(mono, "Neu.*5Ac")) {
-    return(.handle_neu5ac_variant(mono, single_sub_pattern))
+  if (.has_neu_marker(mono, "5Ac")) {
+    base_mono <- if (stringr::str_starts(mono, "Neuf")) {
+      "Neuf5Ac"
+    } else {
+      "Neu5Ac"
+    }
+    return(.handle_neu5ac_variant(mono, single_sub_pattern, base_mono))
   }
 
   # Handle all Neu variants containing 5Gc
-  if (stringr::str_detect(mono, "Neu.*5Gc")) {
-    return(.handle_neu5gc_variant(mono, single_sub_pattern))
+  if (.has_neu_marker(mono, "5Gc")) {
+    base_mono <- if (stringr::str_starts(mono, "Neuf")) {
+      "Neuf5Gc"
+    } else {
+      "Neu5Gc"
+    }
+    return(.handle_neu5gc_variant(mono, single_sub_pattern, base_mono))
   }
 
   # Handle other Neu-based monosaccharides (no 5Ac or 5Gc)
   .handle_general_monosaccharide(mono, single_sub_pattern)
+}
+
+.neu_marker_pattern <- function(marker) {
+  stringr::str_glue("(?<![0-9/]){stringr::str_escape(marker)}")
+}
+
+.has_neu_marker <- function(mono, marker) {
+  stringr::str_detect(mono, .neu_marker_pattern(marker))
 }
 
 # Handle general (non-Neu) monosaccharides with substituents
@@ -261,13 +668,21 @@
 }
 
 # Handle all Neu variants containing 5Ac
-.handle_neu5ac_variant <- function(mono, single_sub_pattern) {
-  .handle_neu_with_marker(mono, single_sub_pattern, "5Ac", "Neu5Ac")
+.handle_neu5ac_variant <- function(
+  mono,
+  single_sub_pattern,
+  base_mono = "Neu5Ac"
+) {
+  .handle_neu_with_marker(mono, single_sub_pattern, "5Ac", base_mono)
 }
 
 # Handle all Neu variants containing 5Gc
-.handle_neu5gc_variant <- function(mono, single_sub_pattern) {
-  .handle_neu_with_marker(mono, single_sub_pattern, "5Gc", "Neu5Gc")
+.handle_neu5gc_variant <- function(
+  mono,
+  single_sub_pattern,
+  base_mono = "Neu5Gc"
+) {
+  .handle_neu_with_marker(mono, single_sub_pattern, "5Gc", base_mono)
 }
 
 # Generic helper function for handling Neu variants with specific markers
@@ -278,7 +693,10 @@
   base_mono
 ) {
   # Remove the marker from the monosaccharide name to get the remaining part
-  mono_without_marker <- stringr::str_remove(mono, marker)
+  mono_without_marker <- stringr::str_remove(
+    mono,
+    .neu_marker_pattern(marker)
+  )
 
   # Extract all substituents from the remaining part using normal logic
   all_subs <- stringr::str_extract_all(

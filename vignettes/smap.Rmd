@@ -205,8 +205,8 @@ The main performance benefit of `smap` functions comes from automatic deduplicat
 huge_struc <- rep(struc, 5000)  # 25,000 structures, only 5 unique
 
 cat("Dataset size:", length(huge_struc), "structures\n")
-cat("Unique structures:", length(attr(huge_struc, "structures")), "\n")
-cat("Redundancy factor:", length(huge_struc) / length(attr(huge_struc, "structures")), "x\n")
+cat("Unique structures:", length(attr(huge_struc, "graphs")), "\n")
+cat("Redundancy factor:", length(huge_struc) / length(attr(huge_struc, "graphs")), "x\n")
 
 library(tictoc)
 
@@ -241,6 +241,15 @@ You can use purrr-style lambda notation:
 clustering_coeffs <- smap_dbl(large_struc, ~ igraph::transitivity(.x, type = "global"))
 summary(clustering_coeffs)
 ```
+
+For a structure with floating parts, the callback receives one annotated,
+weakly disconnected graph containing the main tree and every floating
+component. Use `has_floating_parts()` before applying code that assumes a
+single tree. Structure-returning variants such as `smap_structure()` validate
+and canonicalize changed graphs while reusing unchanged graphs that are
+already valid and canonical; a callback that changes vertex identities or
+components must also update the graph's `floating_parts` and
+`floating_substituents` metadata.
 
 ### Combining Multiple Metrics
 

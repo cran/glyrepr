@@ -83,8 +83,8 @@ indexed_report
 huge_struc <- rep(struc, 5000)  # 25,000 structures, only 5 unique
 
 cat("Dataset size:", length(huge_struc), "structures\n")
-cat("Unique structures:", length(attr(huge_struc, "structures")), "\n")
-cat("Redundancy factor:", length(huge_struc) / length(attr(huge_struc, "structures")), "x\n")
+cat("Unique structures:", length(attr(huge_struc, "graphs")), "\n")
+cat("Redundancy factor:", length(huge_struc) / length(attr(huge_struc, "graphs")), "x\n")
 
 library(tictoc)
 
