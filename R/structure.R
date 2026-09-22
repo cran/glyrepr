@@ -181,77 +181,28 @@
 glycan_structure <- function(...) {
   args <- list(...)
 
-  # Handle different input types
-  graphs <- list()
-  iupacs <- character()
-  na_positions <- logical()
+  iupacs <- rep(NA_character_, length(args))
+  na_positions <- logical(length(args))
 
   for (i in seq_along(args)) {
     arg <- args[[i]]
     if (is.null(arg) || (is.atomic(arg) && length(arg) == 1 && is.na(arg))) {
-      # Track NA position
-      iupacs <- c(iupacs, NA_character_)
-      na_positions <- c(na_positions, TRUE)
-    } else if (inherits(arg, "igraph")) {
-      graphs <- c(graphs, list(arg))
-      iupacs <- c(iupacs, NA_character_) # placeholder
-      na_positions <- c(na_positions, FALSE)
-    } else {
+      na_positions[i] <- TRUE
+    } else if (!inherits(arg, "igraph")) {
       cli::cli_abort("All arguments must be igraph objects or NA values.")
     }
   }
 
-  if (length(iupacs) == 0) {
-    return(new_glycan_structure())
-  }
-
-  # Get indices of valid (non-NA) positions
   valid_idx <- which(!na_positions)
-
-  if (length(valid_idx) == 0 && all(na_positions)) {
-    # All are NA
-    return(new_glycan_structure(rep(NA_character_, length(iupacs)), list()))
-  }
-
   if (length(valid_idx) == 0) {
-    return(new_glycan_structure(character(), list()))
+    return(new_glycan_structure(iupacs, list()))
   }
 
-  # Extract valid graphs
-  valid_graphs <- graphs
+  valid_graphs <- unname(args[valid_idx])
+  canonical <- canonicalize_and_validate_iupac_graphs(valid_graphs)
+  iupacs[valid_idx] <- canonical$iupacs
 
-  # Validate and process each valid graph
-  processed_graphs <- purrr::map(valid_graphs, function(graph) {
-    checkmate::assert_class(graph, "igraph")
-    graph %>%
-      validate_glycan_graph() %>%
-      canonicalize_glycan_graph()
-  })
-
-  # Validate the graph-list container.
-  validate_glycan_graph_vector(processed_graphs)
-
-  # Use IUPAC codes directly as data for the glycan_structure vctrs vector
-  processed_iupacs <- purrr::map_chr(
-    processed_graphs,
-    graph_to_iupac
-  )
-
-  # Create a unique list based on uniqueness of IUPAC codes for structures storage
-  unique_indices <- which(!duplicated(processed_iupacs))
-  unique_graphs <- processed_graphs[unique_indices]
-  unique_iupacs <- processed_iupacs[unique_indices]
-  names(unique_graphs) <- unique_iupacs
-
-  # Build final result - replace placeholders with actual IUPACs
-  # Map reordered positions back to original positions
-  for (i in seq_along(processed_graphs)) {
-    final_pos <- valid_idx[i]
-    iupac <- processed_iupacs[i]
-    iupacs[final_pos] <- iupac
-  }
-
-  new_glycan_structure(iupacs, unique_graphs)
+  new_glycan_structure(iupacs, canonical$graphs)
 }
 
 #' Extract stored IUPAC-condensed strings from a glycan structure vector
@@ -586,7 +537,13 @@ glycan_structure_from_iupac_character <- function(x) {
 
   non_na_x <- x[!na_mask]
   unique_x <- unique(non_na_x)
+  arrays <- .compact_iupac_arrays(unique_x)
+  if (all(vapply(arrays, \(x) identical(x$status, "ok"), logical(1)))) {
+    return(.compact_structure_from_arrays(x, unique_x, arrays))
+  }
 
+  # Replay the complete reference path on native failures, preserving the
+  # original parse-before-validation precedence and purrr error indices.
   graphs <- purrr::map(unique_x, .parse_iupac_condensed_single)
   canonical <- canonicalize_and_validate_iupac_graphs(graphs)
 
@@ -606,15 +563,11 @@ glycan_structure_from_iupac_character <- function(x) {
 #' @returns A list with canonical `iupacs` and unique named `graphs`.
 #' @noRd
 canonicalize_and_validate_iupac_graphs <- function(graphs) {
-  graphs <- purrr::map(graphs, function(graph) {
-    graph %>%
-      validate_glycan_graph() %>%
-      canonicalize_glycan_graph()
-  })
-
+  processed <- purrr::map(graphs, process_glycan_structure_element)
+  graphs <- purrr::map(processed, "graph")
   validate_glycan_graph_vector(graphs)
 
-  iupacs <- purrr::map_chr(graphs, graph_to_iupac)
+  iupacs <- purrr::map_chr(processed, "iupac")
   unique_indices <- which(!duplicated(iupacs))
   unique_graphs <- graphs[unique_indices]
   names(unique_graphs) <- iupacs[unique_indices]
@@ -862,12 +815,12 @@ glycan_structure_from_iupac_character_with_na <- function(x) {
   groups <- match(x, unique_x)
   positions <- lapply(seq_along(unique_x), function(i) which(groups == i))
 
-  recover_glycan_structure_elements(
-    elements = as.list(unique_x),
+  outcomes <- .compact_iupac_outcomes(unique_x)
+  assemble_recovered_structure_outcomes(
+    outcomes,
     positions = positions,
     size = length(x),
-    input_names = names(x),
-    parser = .parse_iupac_condensed_single
+    input_names = names(x)
   )
 }
 
@@ -893,6 +846,15 @@ recover_glycan_structure_elements <- function(
       error = function(cnd) cnd
     )
   })
+  assemble_recovered_structure_outcomes(outcomes, positions, size, input_names)
+}
+
+assemble_recovered_structure_outcomes <- function(
+  outcomes,
+  positions,
+  size,
+  input_names
+) {
   failed <- vapply(outcomes, inherits, logical(1), what = "error")
   successful <- outcomes[!failed]
 
@@ -944,12 +906,7 @@ recover_glycan_structure_elements <- function(
 #' @noRd
 process_glycan_structure_element <- function(graph) {
   graph <- validate_glycan_graph(graph)
-  graph <- canonicalize_glycan_graph(graph)
-
-  list(
-    graph = graph,
-    iupac = graph_to_iupac(graph)
-  )
+  canonicalize_graph_with_iupac(graph)
 }
 
 #' Test whether a graph-list element represents a missing structure
@@ -1000,7 +957,10 @@ warn_structure_failures <- function(positions, reasons, input_names = NULL) {
       "{n_failed} structure{?s} failed validation and {?was/were} replaced with {.code NA}.",
       "x" = "{failure_details}"
     ),
-    class = "glyrepr_warning_structure_failure"
+    class = "glyrepr_warning_structure_failure",
+    positions = positions,
+    reasons = reasons,
+    input_names = if (is.null(input_names)) NULL else input_names[positions]
   )
 }
 
