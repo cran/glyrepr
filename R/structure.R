@@ -176,11 +176,12 @@
 #' is_glycan_structure(simple_struct)  # TRUE
 #' is_glycan_structure(graph)          # FALSE
 #'
-#' @importFrom magrittr %>%
 #' @export
 glycan_structure <- function(...) {
-  args <- list(...)
+  .glycan_structure_from_graphs(list(...))
+}
 
+.glycan_structure_from_graphs <- function(args, progress = NULL) {
   iupacs <- rep(NA_character_, length(args))
   na_positions <- logical(length(args))
 
@@ -189,7 +190,10 @@ glycan_structure <- function(...) {
     if (is.null(arg) || (is.atomic(arg) && length(arg) == 1 && is.na(arg))) {
       na_positions[i] <- TRUE
     } else if (!inherits(arg, "igraph")) {
-      cli::cli_abort("All arguments must be igraph objects or NA values.")
+      cli::cli_abort(
+        "All arguments must be igraph objects or NA values.",
+        call = rlang::caller_env()
+      )
     }
   }
 
@@ -199,7 +203,7 @@ glycan_structure <- function(...) {
   }
 
   valid_graphs <- unname(args[valid_idx])
-  canonical <- canonicalize_and_validate_iupac_graphs(valid_graphs)
+  canonical <- canonicalize_and_validate_iupac_graphs(valid_graphs, progress)
   iupacs[valid_idx] <- canonical$iupacs
 
   new_glycan_structure(iupacs, canonical$graphs)
@@ -270,6 +274,9 @@ structure_na_mask <- function(x) {
 filter_used_structure_graphs <- function(iupacs, graphs) {
   used_codes <- unique(unname(iupacs[!is.na(iupacs)]))
   used_graphs <- graphs[used_codes]
+  if (.compact_graph_list_valid_native(used_graphs)) {
+    return(used_graphs)
+  }
   used_graphs[!vapply(used_graphs, is.null, logical(1))]
 }
 
@@ -528,7 +535,7 @@ vec_cast.glyrepr_structure.character <- function(x, to, ...) {
 #' @param x A character vector of IUPAC-condensed strings.
 #' @returns A [glycan_structure()] vector.
 #' @noRd
-glycan_structure_from_iupac_character <- function(x) {
+glycan_structure_from_iupac_character <- function(x, progress = NULL) {
   na_mask <- is.na(x)
 
   if (all(na_mask)) {
@@ -537,15 +544,30 @@ glycan_structure_from_iupac_character <- function(x) {
 
   non_na_x <- x[!na_mask]
   unique_x <- unique(non_na_x)
-  arrays <- .compact_iupac_arrays(unique_x)
+  if (is.null(progress)) {
+    batch <- .compact_construct(unique_x, TRUE)
+    if (!is.null(batch) && !any(batch$failed)) {
+      return(new_glycan_structure(
+        unname(batch$keys[match(x, unique_x)]),
+        batch$graphs
+      ))
+    }
+  }
+  arrays <- .compact_iupac_arrays(unique_x, progress)
   if (all(vapply(arrays, \(x) identical(x$status, "ok"), logical(1)))) {
-    return(.compact_structure_from_arrays(x, unique_x, arrays))
+    return(.compact_structure_from_arrays(x, unique_x, arrays, progress))
   }
 
   # Replay the complete reference path on native failures, preserving the
   # original parse-before-validation precedence and purrr error indices.
-  graphs <- purrr::map(unique_x, .parse_iupac_condensed_single)
-  canonical <- canonicalize_and_validate_iupac_graphs(graphs)
+  graphs <- .structure_progress_map(
+    unique_x,
+    .parse_iupac_condensed_single,
+    progress,
+    "Parsing reference structures",
+    purrr::map
+  )
+  canonical <- canonicalize_and_validate_iupac_graphs(graphs, progress)
 
   result_iupacs <- rep(NA_character_, length(x))
   result_iupacs[!na_mask] <- canonical$iupacs[match(non_na_x, unique_x)]
@@ -562,8 +584,22 @@ glycan_structure_from_iupac_character <- function(x) {
 #' @param graphs A list of parsed igraph graph objects.
 #' @returns A list with canonical `iupacs` and unique named `graphs`.
 #' @noRd
-canonicalize_and_validate_iupac_graphs <- function(graphs) {
-  processed <- purrr::map(graphs, process_glycan_structure_element)
+canonicalize_and_validate_iupac_graphs <- function(graphs, progress = NULL) {
+  native <- .compact_graph_results(graphs, validate = TRUE, progress = progress)
+  processed <- .structure_progress_map(
+    seq_along(graphs),
+    function(i) {
+      a <- native[[i]]
+      if (.compact_graph_ok(a)) {
+        list(graph = .compact_restore_graph(graphs[[i]], a), iupac = a$iupac)
+      } else {
+        process_glycan_structure_element(graphs[[i]])
+      }
+    },
+    progress,
+    "Building structures",
+    purrr::map
+  )
   graphs <- purrr::map(processed, "graph")
   validate_glycan_graph_vector(graphs)
 
@@ -689,6 +725,16 @@ vec_restore.glyrepr_structure <- function(x, to, ...) {
 #'   Can be an igraph object, a list of igraph objects,
 #'   a character vector of IUPAC-condensed strings,
 #'   or an existing glyrepr_structure object.
+#' @param progress `FALSE` (default) for silent operation, `TRUE` for a cli
+#'   progress bar, or a function with arguments `stage`, `current`, and `total`.
+#'   A callback owns its display; no cli bar is created. Counts are local to each
+#'   stage, not an overall percentage. Character parsing counts unique non-missing
+#'   inputs; graph construction may count deduplicated canonical structures.
+#'   Updates are throttled, with stage boundaries always reported. Empty or
+#'   already-converted inputs may report no stages. Callback errors abort the
+#'   operation, including with `on_failure = "na"`. The cli bar is closed when
+#'   the call exits, including on errors or interrupts, and follows cli display
+#'   settings (short or non-interactive calls may show no visible bar).
 #' @param on_failure The failure policy for element-local parsing, validation,
 #'   and canonicalization errors. `"error"` preserves the default strict
 #'   behavior. `"na"` replaces failed elements with `NA` and emits one warning
@@ -696,6 +742,8 @@ vec_restore.glyrepr_structure <- function(x, to, ...) {
 #'   remain missing without a warning. Vector-level incompatibilities still
 #'   produce an error.
 #'
+#' @param warn Whether to warn about recovered failures with `on_failure = "na"`.
+#'   Validation is always performed.
 #' @returns A glyrepr_structure object.
 #'
 #' @examples
@@ -735,14 +783,53 @@ vec_restore.glyrepr_structure <- function(x, to, ...) {
 #' )
 #'
 #' @export
-as_glycan_structure <- function(x, on_failure = c("error", "na")) {
+as_glycan_structure <- function(
+  x,
+  on_failure = c("error", "na"),
+  progress = FALSE,
+  warn = TRUE
+) {
+  progress <- .structure_progress(progress)
   on_failure <- rlang::arg_match(on_failure)
+  checkmate::assert_flag(warn)
 
   if (identical(on_failure, "error")) {
+    if (!is.null(progress) && !inherits(x, "glyrepr_structure")) {
+      if (is.character(x) && !is.object(x) && length(x)) {
+        out <- glycan_structure_from_iupac_character(x, progress)
+        names(out) <- names(x)
+        return(out)
+      }
+      if (inherits(x, "igraph")) {
+        return(.glycan_structure_from_graphs(list(x), progress))
+      }
+      if (
+        is.list(x) &&
+          !is.object(x) &&
+          all(vapply(x, inherits, logical(1), "igraph"))
+      ) {
+        return(.glycan_structure_from_graphs(x, progress))
+      }
+    }
     return(vctrs::vec_cast(x, glycan_structure()))
   }
 
-  as_glycan_structure_with_na(x)
+  if (!warn && is.character(x)) {
+    return(glycan_structure_from_iupac_character_with_na(
+      x,
+      progress,
+      quiet = TRUE
+    ))
+  }
+  if (!warn) {
+    return(withCallingHandlers(
+      as_glycan_structure_with_na(x, progress),
+      glyrepr_warning_structure_failure = function(cnd) {
+        invokeRestart("muffleWarning")
+      }
+    ))
+  }
+  as_glycan_structure_with_na(x, progress)
 }
 
 #' Convert to glycan structures with element-local failure recovery
@@ -750,21 +837,21 @@ as_glycan_structure <- function(x, on_failure = c("error", "na")) {
 #' @param x An object accepted by [as_glycan_structure()].
 #' @returns A `glyrepr_structure` vector.
 #' @noRd
-as_glycan_structure_with_na <- function(x) {
+as_glycan_structure_with_na <- function(x, progress = NULL) {
   if (inherits(x, "glyrepr_structure")) {
     return(vctrs::vec_cast(x, glycan_structure()))
   }
 
   if (is.character(x)) {
-    return(glycan_structure_from_iupac_character_with_na(x))
+    return(glycan_structure_from_iupac_character_with_na(x, progress))
   }
 
   if (inherits(x, "igraph")) {
-    return(glycan_structure_from_graph_list_with_na(list(x)))
+    return(glycan_structure_from_graph_list_with_na(list(x), progress))
   }
 
   if (is.list(x)) {
-    return(glycan_structure_from_graph_list_with_na(x))
+    return(glycan_structure_from_graph_list_with_na(x, progress))
   }
 
   vctrs::vec_cast(x, glycan_structure())
@@ -775,7 +862,7 @@ as_glycan_structure_with_na <- function(x) {
 #' @param x A list containing igraph objects and missing values.
 #' @returns A `glyrepr_structure` vector.
 #' @noRd
-glycan_structure_from_graph_list_with_na <- function(x) {
+glycan_structure_from_graph_list_with_na <- function(x, progress = NULL) {
   missing <- vapply(x, is_missing_structure_input, logical(1))
   is_graph <- vapply(x, inherits, logical(1), what = "igraph")
   invalid_positions <- which(!missing & !is_graph)
@@ -793,7 +880,8 @@ glycan_structure_from_graph_list_with_na <- function(x) {
     positions = positions,
     size = length(x),
     input_names = names(x),
-    parser = identity
+    parser = identity,
+    progress = progress
   )
 }
 
@@ -802,7 +890,11 @@ glycan_structure_from_graph_list_with_na <- function(x) {
 #' @param x A character vector of IUPAC-condensed strings.
 #' @returns A `glyrepr_structure` vector.
 #' @noRd
-glycan_structure_from_iupac_character_with_na <- function(x) {
+glycan_structure_from_iupac_character_with_na <- function(
+  x,
+  progress = NULL,
+  quiet = FALSE
+) {
   non_missing <- which(!is.na(x))
 
   if (length(non_missing) == 0) {
@@ -812,15 +904,93 @@ glycan_structure_from_iupac_character_with_na <- function(x) {
   }
 
   unique_x <- unique(x[non_missing])
+  if (is.null(progress)) {
+    batch <- .compact_construct(unique_x, TRUE)
+    if (!is.null(batch)) {
+      if (quiet) {
+        # These failures prove chemical invalidity, independently of the
+        # reference parser's broader syntax/size support.
+        proven <- batch$reasons %in%
+          c(
+            "unknown monosaccharide",
+            "duplicated linkage positions",
+            "conflicting substituent positions",
+            "conflicting Neu markers",
+            "no conflict-free acyclic floating assignment"
+          )
+        proven <- proven | unique_x == ""
+        batch$failed[proven] <- FALSE
+      }
+      if (!any(batch$failed)) {
+        out <- new_glycan_structure(
+          batch$keys[match(x, unique_x)],
+          batch$graphs
+        )
+        names(out) <- names(x)
+        return(out)
+      }
+      # Only rejected/unsupported inputs need diagnostic reference parsing.
+      failed_ids <- which(batch$failed)
+      fallback <- .compact_iupac_outcomes(unique_x[failed_ids])
+      if (quiet || !any(vapply(fallback, inherits, logical(1), "error"))) {
+        for (j in seq_along(fallback)) {
+          item <- fallback[[j]]
+          if (is.null(item) || inherits(item, "error")) {
+            next
+          }
+          batch$keys[failed_ids[[j]]] <- item$iupac
+          batch$graphs[[item$iupac]] <- item$graph
+        }
+        used <- unique(batch$keys[!is.na(batch$keys)])
+        graphs <- if (length(used)) batch$graphs[used] else list()
+        return(new_glycan_structure(
+          stats::setNames(batch$keys[match(x, unique_x)], names(x)),
+          graphs
+        ))
+      }
+      outcomes <- Map(
+        function(graph, iupac) list(graph = graph, iupac = iupac),
+        batch$graphs[match(batch$keys, names(batch$graphs))],
+        batch$keys
+      )
+      outcomes[failed_ids] <- fallback
+      groups <- match(x, unique_x)
+      positions <- unname(split(
+        non_missing,
+        factor(groups[non_missing], levels = seq_along(unique_x))
+      ))
+      return(assemble_recovered_structure_outcomes(
+        outcomes,
+        positions,
+        length(x),
+        names(x),
+        warn = !quiet
+      ))
+    }
+  }
+  arrays <- .compact_iupac_arrays(unique_x, progress)
+  if (
+    is.null(progress) &&
+      all(vapply(arrays, function(a) identical(a$status, "ok"), logical(1)))
+  ) {
+    out <- .compact_structure_from_arrays(x, unique_x, arrays, progress)
+    names(out) <- names(x)
+    return(out)
+  }
   groups <- match(x, unique_x)
-  positions <- lapply(seq_along(unique_x), function(i) which(groups == i))
+  positions <- unname(split(
+    non_missing,
+    factor(groups[non_missing], levels = seq_along(unique_x))
+  ))
 
-  outcomes <- .compact_iupac_outcomes(unique_x)
+  outcomes <- .compact_iupac_outcomes(unique_x, progress, arrays)
   assemble_recovered_structure_outcomes(
     outcomes,
     positions = positions,
     size = length(x),
-    input_names = names(x)
+    input_names = names(x),
+    progress = progress,
+    warn = !quiet
   )
 }
 
@@ -838,23 +1008,42 @@ recover_glycan_structure_elements <- function(
   positions,
   size,
   input_names,
-  parser
+  parser,
+  progress = NULL
 ) {
-  outcomes <- lapply(elements, function(element) {
-    tryCatch(
-      process_glycan_structure_element(parser(element)),
-      error = function(cnd) cnd
-    )
-  })
-  assemble_recovered_structure_outcomes(outcomes, positions, size, input_names)
+  outcomes <- .structure_progress_map(
+    elements,
+    function(element) {
+      tryCatch(
+        process_glycan_structure_element(parser(element)),
+        error = function(cnd) cnd
+      )
+    },
+    progress,
+    "Recovering structures"
+  )
+  assemble_recovered_structure_outcomes(
+    outcomes,
+    positions,
+    size,
+    input_names,
+    progress
+  )
 }
 
 assemble_recovered_structure_outcomes <- function(
   outcomes,
   positions,
   size,
-  input_names
+  input_names,
+  progress = NULL,
+  warn = TRUE
 ) {
+  update <- .structure_progress_stage(
+    progress,
+    "Assembling results",
+    length(outcomes)
+  )
   failed <- vapply(outcomes, inherits, logical(1), what = "error")
   successful <- outcomes[!failed]
 
@@ -866,6 +1055,7 @@ assemble_recovered_structure_outcomes <- function(
   successful_iupacs <- vapply(successful, `[[`, character(1), "iupac")
   for (i in seq_along(successful_positions)) {
     result_iupacs[successful_positions[[i]]] <- successful_iupacs[[i]]
+    if (!is.null(update)) update(i)
   }
 
   unique_graphs <- successful_graphs[!duplicated(successful_iupacs)]
@@ -873,7 +1063,7 @@ assemble_recovered_structure_outcomes <- function(
   out <- new_glycan_structure(result_iupacs, unique_graphs)
   names(out) <- input_names
 
-  if (any(failed)) {
+  if (warn && any(failed)) {
     failure_positions <- unlist(positions[failed], use.names = FALSE)
     failure_reasons <- unlist(
       Map(
@@ -896,6 +1086,9 @@ assemble_recovered_structure_outcomes <- function(
     )
   }
 
+  if (!is.null(update)) {
+    update(length(outcomes))
+  }
   out
 }
 
@@ -905,6 +1098,13 @@ assemble_recovered_structure_outcomes <- function(
 #' @returns A list containing the canonical graph and IUPAC string.
 #' @noRd
 process_glycan_structure_element <- function(graph) {
+  native <- .compact_graph_results(list(graph), validate = TRUE)[[1]]
+  if (.compact_graph_ok(native)) {
+    return(list(
+      graph = .compact_restore_graph(graph, native),
+      iupac = native$iupac
+    ))
+  }
   graph <- validate_glycan_graph(graph)
   canonicalize_graph_with_iupac(graph)
 }
@@ -924,6 +1124,10 @@ is_missing_structure_input <- function(x) {
 #' @returns A one-line character scalar.
 #' @noRd
 normalize_structure_failure_reason <- function(cnd) {
+  cached <- attr(cnd, "array_failure_reason", exact = TRUE)
+  if (!is.null(cached)) {
+    return(cached)
+  }
   reason <- conditionMessage(cnd)
   reason <- stringr::str_replace_all(reason, "\\s*\\n\\s*", " ")
   stringr::str_squish(reason)

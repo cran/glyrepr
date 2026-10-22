@@ -48,9 +48,8 @@ overflow: visible;
 }
 </style>
 <style type="text/css" data-origin="pandoc">
-html { -webkit-text-size-adjust: 100%; }
 pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span { line-height: 1.25; }
 pre > code.sourceCode > span:empty { height: 1.2em; }
 .sourceCode { overflow: visible; }
 code.sourceCode > span { color: inherit; text-decoration: inherit; }
@@ -61,7 +60,7 @@ div.sourceCode { overflow: auto; }
 }
 @media print {
 pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
 }
 pre.numberSource code
 { counter-reset: source-line 0; }
@@ -417,7 +416,7 @@ has 5,000 elements, but only 5 unique graphs are stored internally.</p>
 <span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt;     src</span></span>
 <span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="fu">obj_sizes</span>(struc, large_struc)</span>
-<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt; *  15.95 kB</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt; *  13.58 kB</span></span>
 <span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt; * 320.69 kB</span></span></code></pre></div>
 <p>The memory difference can be substantial. For repeated structures,
 the optimized representation can be much smaller than storing every
@@ -605,14 +604,14 @@ from automatic deduplication:</p>
 <span id="cb14-14"><a href="#cb14-14" tabindex="-1"></a><span class="fu">tic</span>(<span class="st">&quot;smap_int (optimized)&quot;</span>)</span>
 <span id="cb14-15"><a href="#cb14-15" tabindex="-1"></a>vertex_counts_optimized <span class="ot">&lt;-</span> <span class="fu">smap_int</span>(huge_struc, igraph<span class="sc">::</span>vcount)</span>
 <span id="cb14-16"><a href="#cb14-16" tabindex="-1"></a><span class="fu">toc</span>()</span>
-<span id="cb14-17"><a href="#cb14-17" tabindex="-1"></a><span class="co">#&gt; smap_int (optimized): 0.02 sec elapsed</span></span>
+<span id="cb14-17"><a href="#cb14-17" tabindex="-1"></a><span class="co">#&gt; smap_int (optimized): 0.035 sec elapsed</span></span>
 <span id="cb14-18"><a href="#cb14-18" tabindex="-1"></a></span>
 <span id="cb14-19"><a href="#cb14-19" tabindex="-1"></a><span class="co"># Naive approach: extract all graphs and process each one</span></span>
 <span id="cb14-20"><a href="#cb14-20" tabindex="-1"></a><span class="fu">tic</span>(<span class="st">&quot;Naive approach (all graphs)&quot;</span>)</span>
 <span id="cb14-21"><a href="#cb14-21" tabindex="-1"></a>all_graphs <span class="ot">&lt;-</span> <span class="fu">get_structure_graphs</span>(huge_struc)  <span class="co"># Extracts all 25,000 graphs</span></span>
 <span id="cb14-22"><a href="#cb14-22" tabindex="-1"></a>vertex_counts_naive <span class="ot">&lt;-</span> purrr<span class="sc">::</span><span class="fu">map_int</span>(all_graphs, igraph<span class="sc">::</span>vcount)</span>
 <span id="cb14-23"><a href="#cb14-23" tabindex="-1"></a><span class="fu">toc</span>()</span>
-<span id="cb14-24"><a href="#cb14-24" tabindex="-1"></a><span class="co">#&gt; Naive approach (all graphs): 0.098 sec elapsed</span></span>
+<span id="cb14-24"><a href="#cb14-24" tabindex="-1"></a><span class="co">#&gt; Naive approach (all graphs): 0.168 sec elapsed</span></span>
 <span id="cb14-25"><a href="#cb14-25" tabindex="-1"></a></span>
 <span id="cb14-26"><a href="#cb14-26" tabindex="-1"></a><span class="co"># Verify results are equivalent (though data types may differ)</span></span>
 <span id="cb14-27"><a href="#cb14-27" tabindex="-1"></a><span class="fu">all.equal</span>(vertex_counts_optimized, vertex_counts_naive)</span>
@@ -744,36 +743,39 @@ structures.</li>
 <h2>Session Information</h2>
 <div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" tabindex="-1"></a><span class="fu">sessionInfo</span>()</span>
 <span id="cb19-2"><a href="#cb19-2" tabindex="-1"></a><span class="co">#&gt; R version 4.6.1 (2026-06-24)</span></span>
-<span id="cb19-3"><a href="#cb19-3" tabindex="-1"></a><span class="co">#&gt; Platform: aarch64-apple-darwin23</span></span>
-<span id="cb19-4"><a href="#cb19-4" tabindex="-1"></a><span class="co">#&gt; Running under: macOS Tahoe 26.5.2</span></span>
+<span id="cb19-3"><a href="#cb19-3" tabindex="-1"></a><span class="co">#&gt; Platform: x86_64-pc-linux-gnu</span></span>
+<span id="cb19-4"><a href="#cb19-4" tabindex="-1"></a><span class="co">#&gt; Running under: Debian GNU/Linux 13 (trixie)</span></span>
 <span id="cb19-5"><a href="#cb19-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb19-6"><a href="#cb19-6" tabindex="-1"></a><span class="co">#&gt; Matrix products: default</span></span>
-<span id="cb19-7"><a href="#cb19-7" tabindex="-1"></a><span class="co">#&gt; BLAS:   /Library/Frameworks/R.framework/Versions/4.6/Resources/lib/libRblas.0.dylib </span></span>
-<span id="cb19-8"><a href="#cb19-8" tabindex="-1"></a><span class="co">#&gt; LAPACK: /Library/Frameworks/R.framework/Versions/4.6/Resources/lib/libRlapack.dylib;  LAPACK version 3.12.1</span></span>
+<span id="cb19-7"><a href="#cb19-7" tabindex="-1"></a><span class="co">#&gt; BLAS:   /usr/lib/x86_64-linux-gnu/blas/libblas.so.3.12.1 </span></span>
+<span id="cb19-8"><a href="#cb19-8" tabindex="-1"></a><span class="co">#&gt; LAPACK: /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.12.1;  LAPACK version 3.12.0</span></span>
 <span id="cb19-9"><a href="#cb19-9" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb19-10"><a href="#cb19-10" tabindex="-1"></a><span class="co">#&gt; locale:</span></span>
-<span id="cb19-11"><a href="#cb19-11" tabindex="-1"></a><span class="co">#&gt; [1] C/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8</span></span>
-<span id="cb19-12"><a href="#cb19-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb19-13"><a href="#cb19-13" tabindex="-1"></a><span class="co">#&gt; time zone: Asia/Shanghai</span></span>
-<span id="cb19-14"><a href="#cb19-14" tabindex="-1"></a><span class="co">#&gt; tzcode source: internal</span></span>
+<span id="cb19-11"><a href="#cb19-11" tabindex="-1"></a><span class="co">#&gt;  [1] LC_CTYPE=C.UTF-8       LC_NUMERIC=C           LC_TIME=C.UTF-8       </span></span>
+<span id="cb19-12"><a href="#cb19-12" tabindex="-1"></a><span class="co">#&gt;  [4] LC_COLLATE=C.UTF-8     LC_MONETARY=C.UTF-8    LC_MESSAGES=C.UTF-8   </span></span>
+<span id="cb19-13"><a href="#cb19-13" tabindex="-1"></a><span class="co">#&gt;  [7] LC_PAPER=C.UTF-8       LC_NAME=C              LC_ADDRESS=C          </span></span>
+<span id="cb19-14"><a href="#cb19-14" tabindex="-1"></a><span class="co">#&gt; [10] LC_TELEPHONE=C         LC_MEASUREMENT=C.UTF-8 LC_IDENTIFICATION=C   </span></span>
 <span id="cb19-15"><a href="#cb19-15" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb19-16"><a href="#cb19-16" tabindex="-1"></a><span class="co">#&gt; attached base packages:</span></span>
-<span id="cb19-17"><a href="#cb19-17" tabindex="-1"></a><span class="co">#&gt; [1] stats     graphics  grDevices utils     datasets  methods   base     </span></span>
+<span id="cb19-16"><a href="#cb19-16" tabindex="-1"></a><span class="co">#&gt; time zone: Asia/Tokyo</span></span>
+<span id="cb19-17"><a href="#cb19-17" tabindex="-1"></a><span class="co">#&gt; tzcode source: system (glibc)</span></span>
 <span id="cb19-18"><a href="#cb19-18" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb19-19"><a href="#cb19-19" tabindex="-1"></a><span class="co">#&gt; other attached packages:</span></span>
-<span id="cb19-20"><a href="#cb19-20" tabindex="-1"></a><span class="co">#&gt; [1] tictoc_1.2.1  lobstr_1.2.1  dplyr_1.2.1   tibble_3.3.1  purrr_1.2.2  </span></span>
-<span id="cb19-21"><a href="#cb19-21" tabindex="-1"></a><span class="co">#&gt; [6] glyrepr_1.1.0</span></span>
-<span id="cb19-22"><a href="#cb19-22" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb19-23"><a href="#cb19-23" tabindex="-1"></a><span class="co">#&gt; loaded via a namespace (and not attached):</span></span>
-<span id="cb19-24"><a href="#cb19-24" tabindex="-1"></a><span class="co">#&gt;  [1] jsonlite_2.0.0    compiler_4.6.1    tidyselect_1.2.1  Rcpp_1.1.2       </span></span>
-<span id="cb19-25"><a href="#cb19-25" tabindex="-1"></a><span class="co">#&gt;  [5] stringr_1.6.0     jquerylib_0.1.4   yaml_2.3.12       fastmap_1.2.0    </span></span>
-<span id="cb19-26"><a href="#cb19-26" tabindex="-1"></a><span class="co">#&gt;  [9] R6_2.6.1          generics_0.1.4    igraph_2.3.3      knitr_1.51       </span></span>
-<span id="cb19-27"><a href="#cb19-27" tabindex="-1"></a><span class="co">#&gt; [13] backports_1.5.1   checkmate_2.3.4   bslib_0.12.0      pillar_1.11.1    </span></span>
-<span id="cb19-28"><a href="#cb19-28" tabindex="-1"></a><span class="co">#&gt; [17] rlang_1.3.0       utf8_1.2.6        cachem_1.1.0      stringi_1.8.9    </span></span>
-<span id="cb19-29"><a href="#cb19-29" tabindex="-1"></a><span class="co">#&gt; [21] xfun_0.60         sass_0.4.10       otel_0.2.0        cli_3.6.6        </span></span>
-<span id="cb19-30"><a href="#cb19-30" tabindex="-1"></a><span class="co">#&gt; [25] magrittr_2.0.5    digest_0.6.39     lifecycle_1.0.5   prettyunits_1.2.0</span></span>
-<span id="cb19-31"><a href="#cb19-31" tabindex="-1"></a><span class="co">#&gt; [29] vctrs_0.7.3       evaluate_1.0.5    glue_1.8.1        rmarkdown_2.31   </span></span>
-<span id="cb19-32"><a href="#cb19-32" tabindex="-1"></a><span class="co">#&gt; [33] tools_4.6.1       pkgconfig_2.0.3   htmltools_0.5.9</span></span></code></pre></div>
+<span id="cb19-19"><a href="#cb19-19" tabindex="-1"></a><span class="co">#&gt; attached base packages:</span></span>
+<span id="cb19-20"><a href="#cb19-20" tabindex="-1"></a><span class="co">#&gt; [1] stats     graphics  grDevices utils     datasets  methods   base     </span></span>
+<span id="cb19-21"><a href="#cb19-21" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb19-22"><a href="#cb19-22" tabindex="-1"></a><span class="co">#&gt; other attached packages:</span></span>
+<span id="cb19-23"><a href="#cb19-23" tabindex="-1"></a><span class="co">#&gt; [1] tictoc_1.2.1  lobstr_1.2.2  dplyr_1.2.1   tibble_3.3.1  purrr_1.2.2  </span></span>
+<span id="cb19-24"><a href="#cb19-24" tabindex="-1"></a><span class="co">#&gt; [6] glyrepr_1.2.0</span></span>
+<span id="cb19-25"><a href="#cb19-25" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb19-26"><a href="#cb19-26" tabindex="-1"></a><span class="co">#&gt; loaded via a namespace (and not attached):</span></span>
+<span id="cb19-27"><a href="#cb19-27" tabindex="-1"></a><span class="co">#&gt;  [1] jsonlite_2.0.0    compiler_4.6.1    tidyselect_1.2.1  Rcpp_1.1.2       </span></span>
+<span id="cb19-28"><a href="#cb19-28" tabindex="-1"></a><span class="co">#&gt;  [5] stringr_1.6.0     jquerylib_0.1.4   yaml_2.3.12       fastmap_1.2.0    </span></span>
+<span id="cb19-29"><a href="#cb19-29" tabindex="-1"></a><span class="co">#&gt;  [9] R6_2.6.1          generics_0.1.4    igraph_2.3.4      knitr_1.52       </span></span>
+<span id="cb19-30"><a href="#cb19-30" tabindex="-1"></a><span class="co">#&gt; [13] backports_1.5.1   checkmate_2.3.4   bslib_0.12.0      pillar_1.11.1    </span></span>
+<span id="cb19-31"><a href="#cb19-31" tabindex="-1"></a><span class="co">#&gt; [17] rlang_1.3.0       utf8_1.2.6        cachem_1.1.0      stringi_1.8.9    </span></span>
+<span id="cb19-32"><a href="#cb19-32" tabindex="-1"></a><span class="co">#&gt; [21] xfun_0.62         sass_0.4.10       otel_0.2.0        cli_3.6.6        </span></span>
+<span id="cb19-33"><a href="#cb19-33" tabindex="-1"></a><span class="co">#&gt; [25] magrittr_2.0.5    digest_0.6.39     lifecycle_1.0.5   prettyunits_1.2.0</span></span>
+<span id="cb19-34"><a href="#cb19-34" tabindex="-1"></a><span class="co">#&gt; [29] vctrs_0.7.3       evaluate_1.0.5    glue_1.8.1        rmarkdown_2.32   </span></span>
+<span id="cb19-35"><a href="#cb19-35" tabindex="-1"></a><span class="co">#&gt; [33] tools_4.6.1       pkgconfig_2.0.3   htmltools_0.5.9</span></span></code></pre></div>
 </div>
 
 

@@ -1,9 +1,24 @@
+# glyrepr 1.2.0
+
+## New features
+
+* `as_glycan_structure()` and `structure_from_arrays()` gain a `progress` argument for progress bars or custom callbacks. (#98)
+* `as_glycan_structure()` and `structure_from_arrays()` gain `warn = FALSE` to silence recovery warnings when invalid inputs are replaced with missing values; validation is unchanged. (#104)
+
+## Performance improvements
+
+* Parsing and constructing glycan structures from IUPAC strings, graphs, arrays, and tables is faster and uses less temporary memory. (#97, #102, #104)
+* Structure transformations, canonicalization, composition calculation, residue counting, and floating-part localization are faster while preserving output and graph attributes. (#97, #99, #103)
+
+## Bug fixes
+
+* Fix intermittent crashes when parsing floating glycan structures. (#104)
+
 # glyrepr 1.1.0
 
 ## New features
 
 * New `canonicalize_glycan_graphs()` validates and canonicalizes a batch of glycan graphs, returning aligned canonical graphs, IUPAC keys, statuses, and failure reasons while preserving source attributes. (#94)
-* `canonicalize_glycan_graphs()` and `structure_from_arrays()` support per-element recovery with `on_failure = "na"`; their warning conditions expose failed positions and reasons for programmatic handling. (#94)
 * New `structure_from_arrays()` constructs glycan vectors directly from residue, edge, and floating-metadata records, preserving names and missing values while deduplicating canonical graphs. (#94)
 
 ## Performance improvements

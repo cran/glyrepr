@@ -22,14 +22,21 @@ struct Unsupported : std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
-// Tree operations use arrays. Unresolved metadata uses one public BLISS callback;
-// no igraph object layout is read and the final glycan graph is built afterward.
+struct LexicalCache {
+  std::unordered_map<std::string, std::vector<int>> orders;
+  std::unordered_map<std::string, std::vector<int>> symmetries;
+};
+
+// Tree operations are independent of igraph's representation. Unresolved
+// metadata uses a public BLISS callback; the final graph is built afterward.
 struct Tree {
   std::vector<std::string> mono, sub, link, sig;
   std::vector<int> parent, depth, vertices, edge_nodes, symmetry;
   std::vector<std::vector<int>> children;
   std::string anomer, sequence;
   bool alditol = false;
+  LexicalCache* order_cache = nullptr;
+  bool distinct_link_ranks = false;
 };
 
 
@@ -75,20 +82,41 @@ inline std::string normalize_sub(std::string s) {
   for (int i : pos) p.push_back(std::to_string(i));
   return join(p, "/") + s.substr(k);
 }
-inline bool matching(std::vector<std::vector<int>> domains) {
-  std::sort(domains.begin(), domains.end(), [](const std::vector<int>& a, const std::vector<int>& b){return a.size() < b.size();});
-  // Augmenting-path bipartite matching avoids exponential carbon-slot search.
-  std::unordered_map<int,int> owners;
-  std::function<bool(int,std::unordered_set<int>&)> assign = [&](int i, std::unordered_set<int>& seen) {
-    for (int slot : domains[i]) if (seen.insert(slot).second) {
-      auto it = owners.find(slot);
-      if (it == owners.end() || assign(it->second, seen)) {owners[slot]=i; return true;}
+inline bool matching(const std::vector<std::vector<int>>& domains) {
+  if (domains.empty()) return true;
+  int max_slot = 0;
+  bool singletons = true;
+  for (const auto& domain : domains) {
+    if (domain.empty()) return false;
+    singletons = singletons && domain.size() == 1;
+    for (int slot : domain) max_slot = std::max(max_slot, slot);
+  }
+  std::vector<int> owners(max_slot + 1, -1);
+  // Reserve forced assignments once. They cannot be moved by an augmenting
+  // path, and most glycan carbon constraints consist entirely of singletons.
+  for (int i = 0; i < (int)domains.size(); ++i) if (domains[i].size() == 1) {
+    int slot = domains[i][0];
+    if (owners[slot] != -1) return false;
+    owners[slot] = i;
+  }
+  if (singletons) return true;
+  std::vector<int> seen(max_slot + 1, -1);
+  std::function<bool(int, int)> assign = [&](int i, int visit) {
+    for (int slot : domains[i]) if (seen[slot] != visit) {
+      seen[slot] = visit;
+      int owner = owners[slot];
+      if (owner == -1 || (domains[owner].size() > 1 && assign(owner, visit))) {
+        owners[slot] = i;
+        return true;
+      }
     }
     return false;
   };
-  for (int i=0; i<(int)domains.size(); ++i) {std::unordered_set<int> seen; if (!assign(i,seen)) return false;}
+  for (int i = 0; i < (int)domains.size(); ++i)
+    if (domains[i].size() > 1 && !assign(i, i)) return false;
   return true;
 }
+
 inline std::string collapse_subs(std::vector<std::string> tokens) {
   std::vector<std::vector<int>> domains;
   for (auto& token : tokens) {
@@ -142,18 +170,32 @@ inline std::pair<std::string,std::string> extract_residue(const std::string& mon
 }
 
 inline std::vector<int> lexical_order(const std::vector<std::string>& strings,
-                               Function& order, bool byte_order) {
+                               Function& order, bool byte_order, LexicalCache* cache = nullptr) {
   std::vector<int> ids(strings.size());
   std::iota(ids.begin(), ids.end(), 0);
+  if (strings.size() < 2 ||
+      std::all_of(strings.begin() + 1, strings.end(),
+                  [&](const std::string& x) { return x == strings[0]; })) return ids;
+  std::string key;
+  if (cache && !byte_order) {
+    for (const auto& s : strings) { key += s; key += '\0'; }
+    auto found = cache->orders.find(key);
+    if (found != cache->orders.end()) return found->second;
+  }
   if (byte_order) {
     std::stable_sort(ids.begin(), ids.end(), [&](int a, int b) {
       return strings[a] < strings[b];
     });
   } else if (strings.size() > 1) {
     // Preserve R's active collation, rather than silently imposing ASCII order.
-    IntegerVector p = order(wrap(strings));
-    for (int i = 0; i < p.size(); ++i) ids[i] = p[i] - 1;
+    CharacterVector values = wrap(strings);
+    R_orderVector1(ids.data(), ids.size(), values, TRUE, FALSE);
   }
+  // Repeated branch signatures share locale-aware ordering only within this
+  // call. Bound temporary storage; neither user inputs nor results are cached
+  // between calls or locales.
+  if (cache && !byte_order && cache->orders.size() < 4096 && key.size() <= 8192)
+    cache->orders.emplace(std::move(key), ids);
   return ids;
 }
 
@@ -162,17 +204,39 @@ inline double rank_link(const std::string& link) {
   return p == "?" || p.find('/') != std::string::npos ? 1.0 : 1.0 / (p[0] - '0');
 }
 
-inline std::string emit(Tree& t, int node, Function& order, bool byte_order) {
-  auto kids = t.children[node];
+inline void mark_distinct_link_ranks(Tree& t) {
+  t.distinct_link_ranks = true;
+  for (const auto& children : t.children) {
+    for (size_t i = 1; i < children.size(); ++i)
+      for (size_t j = 0; j < i; ++j)
+        if (rank_link(t.link[children[i]]) == rank_link(t.link[children[j]])) {
+          t.distinct_link_ranks = false; return;
+        }
+  }
+}
+
+inline void emit_into(Tree& t, int node, Function& order, bool byte_order, std::string& result) {
+  const auto& kids = t.children[node];
+  if (kids.size() == 1) {
+    int child = kids[0];
+    emit_into(t, child, order, byte_order, result);
+    result += "(" + t.link[child] + ")";
+    t.edge_nodes.push_back(child);
+    t.vertices.push_back(node);
+    result += residue_label(t, node);
+    return;
+  }
   if (!kids.empty()) {
-    std::vector<std::string> signatures;
-    for (int k : kids) signatures.push_back(t.sig[k]);
-    auto lexical = lexical_order(signatures, order, byte_order);
     std::vector<int> ranks(kids.size());
-    int r = 0;
-    for (int j = 0; j < (int)lexical.size(); ++j) {
-      if (j && signatures[lexical[j]] != signatures[lexical[j-1]]) ++r;
-      ranks[lexical[j]] = r;
+    if (!t.distinct_link_ranks) {
+      std::vector<std::string> signatures;
+      for (int k : kids) signatures.push_back(t.sig[k]);
+      auto lexical = lexical_order(signatures, order, byte_order, t.order_cache);
+      int r = 0;
+      for (int j = 0; j < (int)lexical.size(); ++j) {
+        if (j && signatures[lexical[j]] != signatures[lexical[j-1]]) ++r;
+        ranks[lexical[j]] = r;
+      }
     }
     std::vector<int> ids(kids.size());
     std::iota(ids.begin(), ids.end(), 0);
@@ -188,22 +252,33 @@ inline std::string emit(Tree& t, int node, Function& order, bool byte_order) {
           (t.depth[kids[j]] == t.depth[kids[backbone]] && better(j, backbone))) backbone = j;
     }
     std::stable_sort(ids.begin(), ids.end(), better);
-    std::string result = emit(t, kids[backbone], order, byte_order) + "(" + t.link[kids[backbone]] + ")";
+    emit_into(t, kids[backbone], order, byte_order, result);
+    result += "(" + t.link[kids[backbone]] + ")";
     t.edge_nodes.push_back(kids[backbone]);
     for (int j : ids) if (j != backbone) {
-      result += "[" + emit(t, kids[j], order, byte_order) + "(" + t.link[kids[j]] + ")]";
+      result += "[";
+      emit_into(t, kids[j], order, byte_order, result);
+      result += "(" + t.link[kids[j]] + ")]";
       t.edge_nodes.push_back(kids[j]);
     }
     t.vertices.push_back(node);
-    return result + residue_label(t, node);
+    result += residue_label(t, node);
+    return;
   }
   t.vertices.push_back(node);
-  return residue_label(t, node);
+  result += residue_label(t, node);
+}
+
+inline std::string emit(Tree& t, int node, Function& order, bool byte_order) {
+  std::string result;
+  result.reserve(t.mono.size()*12);
+  emit_into(t, node, order, byte_order, result);
+  return result;
 }
 
 inline void cache_tree(Tree& t, Function& order, bool byte_order) {
   t.depth.assign(t.mono.size(), -1);
-  t.sig.resize(t.mono.size());
+  if (!t.distinct_link_ranks) t.sig.resize(t.mono.size());
   std::function<void(int)> visit = [&](int n) {
     if (t.depth[n] >= 0) return;
     int occupied = 0;
@@ -218,11 +293,14 @@ inline void cache_tree(Tree& t, Function& order, bool byte_order) {
       }
       visit(k);
       t.depth[n] = std::max(t.depth[n], t.depth[k]+1);
-      tokens.push_back(t.link[k] + "->" + t.sig[k]);
+      if (!t.distinct_link_ranks && t.parent[n] >= 0) tokens.push_back(t.link[k] + "->" + t.sig[k]);
     }
+    if (t.distinct_link_ranks || t.parent[n] < 0) return;
     t.sig[n] = residue_label(t, n);
-    if (!tokens.empty()) {
-      auto ids = lexical_order(tokens, order, byte_order);
+    if (tokens.size() == 1) {
+      t.sig[n] += "{" + tokens[0] + "}";
+    } else if (!tokens.empty()) {
+      auto ids = lexical_order(tokens, order, byte_order, t.order_cache);
       t.sig[n] += "{";
       for (int j = 0; j < (int)ids.size(); ++j) t.sig[n] += (j ? "," : "") + tokens[ids[j]];
       t.sig[n] += "}";
@@ -301,6 +379,11 @@ inline void validate_forest(const Forest& f) {
   while(changed) {changed=false; for(int i=0;i<np;++i) if(!reaches[i]) for(int p:parent_domains[i])
     if(mem[p]<0 || reaches[mem[p]]) {reaches[i]=true;changed=true;break;}}
   if(std::find(reaches.begin(),reaches.end(),false)!=reaches.end()) throw std::runtime_error("floating components cannot reach main");
+  // Without carbon constraints, reachability already proves that an acyclic
+  // assignment exists: each component can choose a parent closer to the main
+  // component. Fixed-position conflicts were checked above.
+  if (std::all_of(position_domains.begin(), position_domains.end(),
+                  [](const std::vector<int>& domain) { return domain.empty(); })) return;
   std::vector<int> selected(np,-2);
   std::vector<std::vector<int>> domains=fixed;
   size_t visits=0;
@@ -419,20 +502,57 @@ inline std::vector<int> symmetry_labels(Forest& f, Function& bliss) {
     for(int p:candidates(f.subs[i],n)) relation(sub_offset+i,p,"floating-substituent-parent");
   auto unique=keys;std::sort(unique.begin(),unique.end());unique.erase(std::unique(unique.begin(),unique.end()),unique.end());
   std::vector<int> colors;for(const auto& key:keys) colors.push_back(std::lower_bound(unique.begin(),unique.end(),key)-unique.begin()+1);
-  IntegerVector labels=bliss(wrap(edges),wrap(colors));
-  return as<std::vector<int>>(labels);
+  // BLISS depends only on the numbered auxiliary graph and color partition.
+  // Different chemistry can share that partition. Reuse this intermediate
+  // permutation within the current batch; still validate and build each glycan.
+  std::string cache_key;
+  auto cache = t.order_cache;
+  if (cache) {
+    size_t count = edges.size();
+    cache_key.assign(reinterpret_cast<const char*>(&count), sizeof(count));
+    if (!edges.empty()) cache_key.append(reinterpret_cast<const char*>(edges.data()), edges.size()*sizeof(int));
+    cache_key.append(reinterpret_cast<const char*>(colors.data()), colors.size()*sizeof(int));
+    auto found = cache->symmetries.find(cache_key);
+    if (found != cache->symmetries.end()) return found->second;
+  }
+  // Keep both callback arguments rooted across allocation of the other
+  // vector and evaluation of the R callback (including forced GC).
+  IntegerVector edge_vector = wrap(edges);
+  IntegerVector color_vector = wrap(colors);
+  IntegerVector labels=bliss(edge_vector,color_vector);
+  auto result = as<std::vector<int>>(labels);
+  if (cache && cache->symmetries.size() < 4096 && cache_key.size() <= 8192)
+    cache->symmetries.emplace(std::move(cache_key), result);
+  return result;
 }
 
-inline List finish_forest(Forest& f, Function& order, bool byte_order, Function& bliss) {
+inline List finish_forest(Forest& f, Function& order, bool byte_order, Function& bliss,
+                          bool arrays = true) {
   Tree& t=f.tree;
-  resolve_singletons(f);
+  if (!f.parts.empty() || !f.subs.empty()) resolve_singletons(f);
   cache_tree(t,order,byte_order);
   t.vertices.clear();t.edge_nodes.clear();
   if(f.parts.empty() && f.subs.empty()) {
     t.sequence=emit(t,f.root,order,byte_order)+(t.alditol?"-ol":"")+"("+t.anomer+"-";
-    return serialize_tree(t);
+    return arrays ? serialize_tree(t) : List::create();
   }
-  auto labels=symmetry_labels(f,bliss);
+  // With one constraint and no tied sibling signatures, BLISS labels cannot
+  // affect either constraint order or vertex order. Avoid building its auxiliary
+  // graph in this case; retain BLISS for every potentially ambiguous ordering.
+  bool needs_symmetry = f.parts.size() + f.subs.size() > 1;
+  for (int v = 0; !needs_symmetry && v < (int)t.children.size(); ++v) {
+    const auto& kids = t.children[v];
+    for (size_t i = 0; i < kids.size(); ++i)
+      for (size_t j = i + 1; j < kids.size(); ++j)
+        if (t.sig[kids[i]] == t.sig[kids[j]] && rank_link(t.link[kids[i]]) == rank_link(t.link[kids[j]]))
+          needs_symmetry = true;
+  }
+  std::vector<int> labels;
+  if (needs_symmetry) labels = symmetry_labels(f,bliss);
+  else {
+    labels.resize(t.mono.size() + f.edge_order.size() + f.parts.size() + f.subs.size());
+    std::iota(labels.begin(), labels.end(), 0);
+  }
   int n=t.mono.size(), part_offset=n+f.edge_order.size(), sub_offset=part_offset+f.parts.size();
   t.symmetry.assign(labels.begin(),labels.begin()+n);
   auto key_candidates=[&](const std::vector<int>& candidates) {
@@ -448,7 +568,7 @@ inline List finish_forest(Forest& f, Function& order, bool byte_order, Function&
     keys.push_back(seq+"\r"+p.linkage+"\r"+(p.parents.empty()?"all":"explicit")+"\r"+key_candidates(candidates(p,n)));
   }
   auto sorted_constraints=[&](const std::vector<std::string>& keys,int offset) {
-    auto ids=lexical_order(keys,order,byte_order);
+    auto ids=lexical_order(keys,order,byte_order,t.order_cache);
     // R orders by key then BLISS label; exact equal keys are the relevant ties.
     size_t begin=0;
     while(begin<ids.size()) {size_t end=begin+1;while(end<ids.size() && keys[ids[begin]]==keys[ids[end]]) ++end;
@@ -466,19 +586,19 @@ inline List finish_forest(Forest& f, Function& order, bool byte_order, Function&
   List parts(part_ids.size()),subs(sub_ids.size());std::string sequence;
   for(int j=0;j<(int)sub_ids.size();++j) {
     const auto& s=f.subs[sub_ids[j]];auto parents=remap(s.parents);
-    subs[j]=List::create(_["substituent"]=s.token,_["parents"]=wrap(parents));
+    subs[j]=List::create(_["substituent"]=s.token,_["parents"]=parents);
     sequence+="{"+s.token+(parents.empty()?"":"|"+int_join(parents))+"}";
   }
   for(int j=0;j<(int)part_ids.size();++j) {
     int id=part_ids[j];const auto& p=f.parts[id];auto parents=remap(p.parents);
     std::vector<int> nodes;for(int v:part_vertices[id]) nodes.push_back(inverse[v]);
-    parts[j]=List::create(_["root"]=inverse[p.root],_["nodes"]=wrap(nodes),_["linkage"]=p.linkage,_["parents"]=wrap(parents));
+    parts[j]=List::create(_["root"]=inverse[p.root],_["nodes"]=nodes,_["linkage"]=p.linkage,_["parents"]=parents);
     sequence+="{"+sequences[id]+"("+p.linkage+")"+(parents.empty()?"":"|"+int_join(parents))+"}";
   }
   t.sequence=sequence+main;
-  List result=serialize_tree(t);
-  if(parts.size()) result["floating_parts"]=parts;
-  if(subs.size()) result["floating_substituents"]=subs;
+  List result = arrays ? serialize_tree(t) : List::create();
+  if(parts.size()) result.push_back(parts, "floating_parts");
+  if(subs.size()) result.push_back(subs, "floating_substituents");
   return result;
 }
 
